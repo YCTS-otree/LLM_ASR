@@ -2,7 +2,7 @@
 
 本地会议转录工具：**FunASR Paraformer-large + Qwen3.5 上下文纠错与标点恢复**。支持麦克风持续录音、录音文件离线转录、2B / 0.8B 双模型对比，以及可追溯的原始识别和修改历史。
 
-**版本：1.4.0 · 源代码许可：[GPL-3.0-only](LICENSE)**
+**版本：1.4.1 · 源代码许可：[GPL-3.0-only](LICENSE)**
 
 这是实验性桌面应用。优先忠实保留讲话内容；模型仍可能漏标点、误断句或误改词，需要人工校对。当前使用离线 Paraformer 按声音停顿分段，不是 FunASR streaming 模型，没有说话人分离，也不保证实时响应。
 
@@ -134,3 +134,5 @@ Qwen 下载脚本校验固定 SHA256，模型标识和对应官方 revision 在 
 - [FunASR](https://github.com/modelscope/FunASR) 与 [Paraformer 模型页](https://modelscope.cn/models/iic/speech_paraformer-large_asr_nat-zh-cn-16k-common-vocab8404-pytorch)。请分别查看代码许可和模型使用条件。
 - [Qwen3.5-2B](https://huggingface.co/Qwen/Qwen3.5-2B) / [Qwen3.5-0.8B](https://huggingface.co/Qwen/Qwen3.5-0.8B)：官方模型卡标示 Apache-2.0。
 - [PySide6 / Qt for Python](https://doc.qt.io/qtforpython-6/licenses.html) 及其他安装依赖的许可由各项目提供；再分发打包程序时需同时保留相应许可和通知。
+
+本机使用现有 Python：`G:\Python\Python_Environment\Python310\python.exe`，`start.bat` 已固定到该环境。

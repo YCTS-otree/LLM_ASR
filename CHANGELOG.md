@@ -114,3 +114,14 @@
 - Same 38-segment evidence replay increased punctuated segments from 7 to 28 and punctuation characters from 27 to 104; non-punctuation text remained unchanged. Eleven targets still failed content checks. Semantic punctuation accuracy remains unaccepted.
 - A 60-second excerpt passed real Paraformer FP16 + Qwen2B BF16 offline import at window 2048: no dropped segments, matching UI/SQLite/TXT, unchanged input. No fresh dual-model/NF4 quality benchmark in this iteration.
 - Public publication excludes recordings, transcripts, model weights, logs and local development history. See BENCHMARK_v1.4.0.md for measured limits.
+
+## v1.4.1 - 2026-09-29
+
+### Changed
+- Update the local checkout from ycts-otree/LLM_ASR main at 8464a7f (v1.4.0), retaining the old local branch as a rollback point.
+- Retain the existing G:\Python\Python_Environment\Python310\python.exe startup configuration.
+
+### Notes
+- All 86 automated tests passed; pip check reports no dependency conflicts. Real Qt sample import loaded ASR/Qwen, applied punctuation, dropped no segments and exported matching UI/TXT/SQLite content.
+- The existing offscreen window-size assertion still fails; GUI sizing verification remains incomplete.
+- User MP3, model weights, recordings and transcripts were preserved. No remote push was performed.
