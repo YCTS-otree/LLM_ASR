@@ -46,6 +46,7 @@ def main():
         window.grab().save(str(ROOT / 'logs' / f'ui_{width}.png'))
     window.session = None
     window.correction_model.setCurrentIndex(window.correction_model.findData('both'))
+    window.apply_correction_selection()
     window.writable_window.setValue(2048)
     window.folder.setText('transcripts')
     window.path_label.setText('对比结果：各自保存 TXT 与 SQLite，原始 ASR 与修改历史保留。')

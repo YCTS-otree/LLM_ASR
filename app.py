@@ -155,6 +155,9 @@ class Session(QThread):
                     continue
                 for branch in pipelines:
                     branch.accept(evidence)
+                if evidence.fallback_reason:
+                    record_event('ASR_PRECISION_FALLBACK',dict(segment_id=evidence.segment_id,
+                        reason=evidence.fallback_reason,actual_precision=evidence.inference_precision))
                 if self.input_path:
                     # Offline throughput may wait; microphone ASR never waits
                     # for LLM. Avoid freezing unprocessed text during fast import.
@@ -298,12 +301,15 @@ class Window(QMainWindow):
         self.enable_correction.setToolTip('实验功能：可能漏改或误改。原始识别和修改历史始终保留在会话数据库。')
         self.enable_correction.setChecked(True)
         self.enable_correction.toggled.connect(self.toggle_correction)
-        self.llm_state = QLabel(f'Qwen3.5-{llm_config.model_size.upper()} · Loading')
+        self.llm_state = QLabel('未加载 · 请先配置参数')
         self.llm_state.setWordWrap(True)
         self.llm_state_changed.connect(self.llm_state.setText)
         local_row = QHBoxLayout()
         local_row.addWidget(self.enable_correction)
         local_row.addWidget(self.llm_state, 1)
+        self.load_button = QPushButton('Load model')
+        self.load_button.clicked.connect(self.prepare_model)
+        local_row.addWidget(self.load_button)
         self.logs_button = QPushButton('日志')
         self.logs_button.clicked.connect(lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(str(ROOT / 'logs'))))
         local_row.addWidget(self.logs_button)
@@ -329,7 +335,7 @@ class Window(QMainWindow):
         row.addWidget(self.stop)
         row.addWidget(self.open_folder)
         layout.addLayout(row)
-        self.state = QLabel('就绪 · 点击开始后才会使用麦克风')
+        self.state = QLabel('先调整参数，再点击 Load model；加载完成后开始录音或导入。')
         self.state.setWordWrap(True)
         layout.addWidget(self.state)
         self.output = QPlainTextEdit()
@@ -359,12 +365,20 @@ class Window(QMainWindow):
         self.correction_model.currentIndexChanged.connect(self.change_correction_models)
         self.llm_precision.currentIndexChanged.connect(self.change_correction_models)
         self.comparison_precision.currentIndexChanged.connect(self.change_correction_models)
+        self.device.currentIndexChanged.connect(self.models_pending)
+        self.precision.currentIndexChanged.connect(self.models_pending)
+        self._selection_mode = self.correction_model.currentData()
         if self.llm_config_error:
             self.enable_correction.setChecked(False)
             self.enable_correction.setEnabled(False)
             self.llm_state.setText('Qwen3.5-2B · Error · 配置无效：' + self.llm_config_error)
 
     def prepare_model(self):
+        if ((self.session and self.session.isRunning()) or
+                (self.loader and self.loader.isRunning()) or
+                (self.llm_loader and self.llm_loader.isRunning())):
+            return
+        self.apply_correction_selection()
         self.set_busy(True)
         self.stop.setEnabled(False)
         self.state.setText('正在后台加载常驻模型…')
@@ -378,25 +392,22 @@ class Window(QMainWindow):
         self.set_busy(False)
         if self.closing:
             self.close()
-        elif self.enable_correction.isChecked():
+        elif self.host.engine is not None and self.enable_correction.isChecked():
             self.prepare_local_model()
 
     def prepare_local_model(self):
         if self.local_backend.ready or (self.llm_loader and self.llm_loader.isRunning()):
             return
         self.llm_loader = LocalModelLoader(self.local_backend)
-        self.correction_model.setEnabled(False)
-        self.llm_precision.setEnabled(False)
-        self.comparison_precision.setEnabled(False)
+        self.set_busy(True)
+        self.stop.setEnabled(False)
         self.llm_loader.error.connect(lambda message: self.llm_state.setText('Error · ' + message))
         self.llm_loader.finished.connect(self.local_models_loaded)
         self.llm_loader.start()
 
     def local_models_loaded(self):
         busy = bool(self.session and self.session.isRunning())
-        self.correction_model.setEnabled(not busy)
-        self.llm_precision.setEnabled(not busy)
-        self.comparison_precision.setEnabled(not busy)
+        self.set_busy(busy)
         if self.closing:
             self.close()
 
@@ -404,16 +415,37 @@ class Window(QMainWindow):
         if (self.session and self.session.isRunning()) or (self.llm_loader and self.llm_loader.isRunning()):
             return
         mode = self.correction_model.currentData()
-        if mode == 'both' and self.local_backend.mode != 'both':
+        if mode == 'both' and self._selection_mode != 'both':
             self.llm_precision.blockSignals(True)
             self.llm_precision.setCurrentIndex(self.llm_precision.findData('int4'))
             self.llm_precision.blockSignals(False)
+        self._selection_mode = mode
+        self.comparison_precision_label.setVisible(mode == 'both')
+        self.comparison_precision.setVisible(mode == 'both')
+        self.models_pending()
+
+    def models_pending(self, _value=None):
+        self.state.setText('参数已选择 · 点击 Load model 应用；不会自动加载。')
+
+    def selected_correction_config(self):
+        mode = self.correction_model.currentData()
         size = '2b' if mode == 'both' else mode
         config = replace(self.base_llm_config, model_size=size, dtype=self.llm_precision.currentData(),
                          model_path=self.base_llm_config.model_path if size == self.base_llm_config.model_size else str(MODEL_SPECS[size]['path']))
+        return config, mode, self.comparison_precision.currentData()
+
+    def correction_selection_matches(self):
+        config, mode, comparison_dtype = self.selected_correction_config()
+        return (self.local_backend.config == config and self.local_backend.mode == mode and
+                (mode != 'both' or self.local_backend.members[1].config.dtype == comparison_dtype))
+
+    def apply_correction_selection(self):
+        if self.correction_selection_matches():
+            return
+        config, mode, comparison_dtype = self.selected_correction_config()
+        size = config.model_size
         self.local_backend.close()
-        self.local_backend = CorrectionModels(config, self.llm_state_changed.emit, mode,
-                                              self.comparison_precision.currentData())
+        self.local_backend = CorrectionModels(config, self.llm_state_changed.emit, mode, comparison_dtype)
         self.local_backend.set_enabled(self.enable_correction.isChecked())
         # Retire completed outputs before relabelling a different model.
         if self.session:
@@ -426,13 +458,11 @@ class Window(QMainWindow):
         self.comparison_output.setVisible(mode == 'both')
         self.comparison_precision_label.setVisible(mode == 'both')
         self.comparison_precision.setVisible(mode == 'both')
-        if self.host.engine is not None and self.enable_correction.isChecked():
-            self.prepare_local_model()
 
     def toggle_correction(self, enabled):
         self.local_backend.set_enabled(enabled)
-        if enabled:
-            self.prepare_local_model()
+        if enabled and not self.local_backend.ready:
+            self.llm_state.setText('待加载 · 点击 Load model')
 
     def refresh_transcript(self, _notification=''):
         if self.session and hasattr(self.session, 'store'):
@@ -501,7 +531,7 @@ class Window(QMainWindow):
 
     def set_busy(self, busy):
         for widget in (self.start, self.import_button, self.model, self.device, self.microphone, self.refresh,
-                       self.folder, self.browse, self.threshold, self.precision, self.correction_model, self.llm_precision, self.comparison_precision, self.writable_window):
+                       self.folder, self.browse, self.threshold, self.precision, self.correction_model, self.llm_precision, self.comparison_precision, self.writable_window, self.load_button):
             widget.setEnabled(not busy)
         self.stop.setEnabled(busy)
         if self.llm_loader and self.llm_loader.isRunning():
@@ -516,6 +546,14 @@ class Window(QMainWindow):
             self.begin(path)
 
     def begin(self, input_path=None):
+        if ((self.session and self.session.isRunning()) or
+                (self.loader and self.loader.isRunning()) or
+                (self.llm_loader and self.llm_loader.isRunning())):
+            return
+        if (self.host.engine is None or self.host.options != (self.device.currentData(), self.precision.currentData(), self.config) or
+                (self.enable_correction.isChecked() and (not self.correction_selection_matches() or not self.local_backend.ready))):
+            self.state.setText('所选模型尚未就绪 · 请先点击 Load model；仅用 ASR 可关闭本地纠错。')
+            return
         if (not input_path and self.microphone.currentData() is None) or not self.folder.text().strip():
             QMessageBox.warning(self, '无法开始', '请选择麦克风和保存目录。')
             return
@@ -592,5 +630,4 @@ if __name__ == '__main__':
     app = QApplication(sys.argv)
     window = Window()
     window.show()
-    window.prepare_model()
     sys.exit(app.exec())

@@ -114,3 +114,20 @@
 - Same 38-segment evidence replay increased punctuated segments from 7 to 28 and punctuation characters from 27 to 104; non-punctuation text remained unchanged. Eleven targets still failed content checks. Semantic punctuation accuracy remains unaccepted.
 - A 60-second excerpt passed real Paraformer FP16 + Qwen2B BF16 offline import at window 2048: no dropped segments, matching UI/SQLite/TXT, unchanged input. No fresh dual-model/NF4 quality benchmark in this iteration.
 - Public publication excludes recordings, transcripts, model weights, logs and local development history. See BENCHMARK_v1.4.0.md for measured limits.
+
+## v1.4.1 - 2026-09-29
+
+### Added
+- Explicit Load model button: startup, model/precision edits and re-enabling correction no longer trigger automatic loading. Parameter edits remain pending until requested.
+- Local ASS reference comparison tool with timestamp range selection and punctuation-insensitive character edit distance; reference text stays outside model inputs.
+
+### Fixed
+- Precision-dependent Paraformer FP16 CIF failure that omitted the first 15 seconds of a clean voiceover. AMP IndexError now retries the same audio once with FP32 and records actual precision/recovery reason.
+- Offline verification now fails on ASR_FAILED events instead of treating zero queue drops and matching saved output as proof of completeness.
+- Beginning a session with unloaded/changed model settings prompts for Load model without silently loading or capturing.
+
+### Notes
+- All 92 automated tests passed; actual single/dual Qt layouts inspected at 900x700 and 720x600.
+- Same 60-second sample now covers all four 15-second segments with one audited FP32 recovery and zero ASR failures. Source unchanged; UI, SQLite and TXT match.
+- Against separately supplied edited AI subtitles, character difference rate decreased from 37.73% to 9.76% by recovering missing speech. Current LLM did not further reduce lexical difference. Numeral/product-name formatting also contributes to this metric.
+- Corrected v1.4.0's incomplete functional-test claim in its report. Meeting-quality acceptance is not met; bounded lexical-correction experiment showed no improvement and was not adopted. No model switch or reference-answer injection.

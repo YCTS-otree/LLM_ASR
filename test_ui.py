@@ -93,6 +93,9 @@ class WindowTests(unittest.TestCase):
 
     def test_file_import_does_not_require_microphone(self):
         self.window.microphone.clear()
+        self.window.enable_correction.setChecked(False)
+        self.window.host.engine=Mock()
+        self.window.host.options=(self.window.device.currentData(),self.window.precision.currentData(),self.window.config)
         self.window.writable_window.setValue(2048)
         with patch('app.QFileDialog.getOpenFileName',return_value=('C:/recording.wav','')), patch('app.Session') as session:
             self.window.import_button.click()
@@ -104,9 +107,12 @@ class WindowTests(unittest.TestCase):
 
     def test_model_selector_supports_single_small_and_dual_independent_members(self):
         self.window.correction_model.setCurrentIndex(self.window.correction_model.findData('0.8b'))
+        self.assertEqual(self.window.local_backend.config.model_size,'2b')
+        self.window.apply_correction_selection()
         self.assertEqual(self.window.local_backend.config.model_size,'0.8b')
         self.assertIn('0.8B',self.window.output_title.text())
         self.window.correction_model.setCurrentIndex(self.window.correction_model.findData('both'))
+        self.window.apply_correction_selection()
         self.assertEqual(len(self.window.local_backend.members),2)
         self.assertEqual(self.window.llm_precision.currentData(),'int4')
         self.assertEqual(self.window.local_backend.members[1].config.dtype,'bf16')
@@ -115,6 +121,29 @@ class WindowTests(unittest.TestCase):
         self.assertFalse(self.window.correction_model.isEnabled())
         self.assertFalse(self.window.llm_precision.isEnabled())
         self.assertFalse(self.window.comparison_precision.isEnabled())
+
+    def test_parameter_changes_and_enable_never_start_loading(self):
+        original=self.window.local_backend
+        with patch('app.ModelLoader') as asr,patch('app.LocalModelLoader') as llm:
+            self.window.correction_model.setCurrentIndex(2)
+            self.window.llm_precision.setCurrentIndex(2)
+            self.window.comparison_precision.setCurrentIndex(1)
+            self.window.enable_correction.setChecked(False)
+            self.window.enable_correction.setChecked(True)
+            self.assertIs(self.window.local_backend,original)
+            asr.assert_not_called();llm.assert_not_called()
+            self.window.load_button.click()
+            asr.return_value.start.assert_called_once()
+            self.assertEqual(self.window.local_backend.mode,'both')
+            self.assertEqual(self.window.local_backend.config.dtype,'fp16')
+            self.assertFalse(self.window.load_button.isEnabled())
+        self.window.loader=None
+
+    def test_begin_with_unloaded_or_changed_models_does_not_load_or_capture(self):
+        with patch('app.Session') as session,patch('app.ModelLoader') as loader:
+            self.window.begin('example.wav')
+            session.assert_not_called();loader.assert_not_called()
+            self.assertIn('Load model',self.window.state.text())
 
     def test_layout_at_default_and_smaller_window(self):
         self.window.show()

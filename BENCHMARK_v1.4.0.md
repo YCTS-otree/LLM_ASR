@@ -1,5 +1,13 @@
 # v1.4.0 — long-input punctuation regression
 
+> **Correction, 2026-09-29:** the 60-second import below had one `ASR_FAILED`
+> event and omitted 0–15 seconds. The verifier checked queue drops and saved
+> output but did not fail on ASR exceptions. Its `passed` result did **not**
+> establish complete transcription. The 38-segment replay also only covers
+> already-successful ASR evidence, so it cannot detect or repair the missing
+> first segment. See [v1.4.1](BENCHMARK_v1.4.1.md) for the corrected test,
+> restored first segment and independent subtitle comparison.
+
 Date: 2026-09-29. Windows / Python 3.10.11 / RTX 4060 Laptop 8GB,
 Torch 2.5.1+cu121, Transformers 5.17.0. Existing Paraformer and local
 Qwen3.5-2B BF16 weights; no new runtime or model family.
