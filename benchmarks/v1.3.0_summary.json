@@ -1,0 +1,125 @@
+{
+  "version": "1.3.0",
+  "date": "2026-09-28",
+  "prompt": "qwen_asr_correction_v6",
+  "small_model_cases": [
+    {
+      "model": "Qwen/Qwen3.5-0.8B",
+      "dtype": "bf16",
+      "cases": 12,
+      "passed": 5,
+      "punctuation_passed": 4,
+      "wording_changed": 1,
+      "outcomes": [
+        {
+          "result": "APPLIED",
+          "count": 8
+        },
+        {
+          "result": "INVALID_OUTPUT",
+          "count": 1
+        },
+        {
+          "result": "NO_CHANGE",
+          "count": 3
+        }
+      ],
+      "mean_latency": 1.086962883338856,
+      "mean_output_tokens": 36.5,
+      "mean_energy_j": 38.45101901376397
+    },
+    {
+      "model": "Qwen/Qwen3.5-0.8B",
+      "dtype": "int4",
+      "cases": 12,
+      "passed": 2,
+      "punctuation_passed": 1,
+      "wording_changed": 0,
+      "outcomes": [
+        {
+          "result": "APPLIED",
+          "count": 7
+        },
+        {
+          "result": "INVALID_OUTPUT",
+          "count": 3
+        },
+        {
+          "result": "NO_CHANGE",
+          "count": 2
+        }
+      ],
+      "mean_latency": 1.735994300004677,
+      "mean_output_tokens": 46.083333333333336,
+      "mean_energy_j": 46.904277706115806
+    }
+  ],
+  "reference_2b_cases": [
+    {
+      "dtype": "bf16",
+      "prompt": "v6",
+      "cases": 12,
+      "passed": 12,
+      "punctuation_passed": 11,
+      "wording_changed": 0,
+      "outcomes": [
+        {
+          "result": "APPLIED",
+          "count": 11
+        },
+        {
+          "result": "NO_CHANGE",
+          "count": 1
+        }
+      ],
+      "mean_latency": 1.3145721833352582,
+      "mean_output_tokens": 35.833333333333336,
+      "mean_input_tokens": 661.1666666666666,
+      "mean_energy_j": 55.709989572605345
+    },
+    {
+      "dtype": "int4",
+      "prompt": "v6",
+      "cases": 12,
+      "passed": 12,
+      "punctuation_passed": 11,
+      "wording_changed": 0,
+      "outcomes": [
+        {
+          "result": "APPLIED",
+          "count": 11
+        },
+        {
+          "result": "VALIDATION_REJECTED",
+          "count": 1
+        }
+      ],
+      "mean_latency": 1.0786100166709123,
+      "mean_output_tokens": 38.166666666666664,
+      "mean_input_tokens": 661.1666666666666,
+      "mean_energy_j": 45.23994727637688
+    }
+  ],
+  "dual_import": {
+    "passed": true,
+    "models": [
+      {
+        "model": "2b",
+        "load_count": 1,
+        "dtype": "int4",
+        "latency": 5.177048399986234,
+        "result": "APPLIED"
+      },
+      {
+        "model": "0.8b",
+        "load_count": 1,
+        "dtype": "bf16",
+        "latency": 4.999540599994361,
+        "result": "APPLIED"
+      }
+    ],
+    "peak_allocated_mib": 4241.48876953125,
+    "sessions": 2,
+    "overlap_seconds": 4.999183099978836
+  }
+}

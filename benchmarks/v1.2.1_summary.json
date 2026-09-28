@@ -1,0 +1,86 @@
+[
+  {
+    "dtype": "bf16",
+    "prompt": "v5",
+    "cases": 12,
+    "passed": 1,
+    "punctuation_passed": 0,
+    "wording_changed": 0,
+    "outcomes": [
+      {
+        "result": "NO_CHANGE",
+        "count": 12
+      }
+    ],
+    "mean_latency": 0.49790420833111665,
+    "mean_output_tokens": 12.0,
+    "mean_input_tokens": 436.9166666666667,
+    "mean_energy_j": 17.83203849277892
+  },
+  {
+    "dtype": "bf16",
+    "prompt": "v6",
+    "cases": 12,
+    "passed": 12,
+    "punctuation_passed": 11,
+    "wording_changed": 0,
+    "outcomes": [
+      {
+        "result": "APPLIED",
+        "count": 11
+      },
+      {
+        "result": "NO_CHANGE",
+        "count": 1
+      }
+    ],
+    "mean_latency": 1.3145721833352582,
+    "mean_output_tokens": 35.833333333333336,
+    "mean_input_tokens": 661.1666666666666,
+    "mean_energy_j": 55.709989572605345
+  },
+  {
+    "dtype": "int4",
+    "prompt": "v5",
+    "cases": 12,
+    "passed": 1,
+    "punctuation_passed": 0,
+    "wording_changed": 0,
+    "outcomes": [
+      {
+        "result": "INVALID_OUTPUT",
+        "count": 1
+      },
+      {
+        "result": "NO_CHANGE",
+        "count": 11
+      }
+    ],
+    "mean_latency": 0.4062328750029944,
+    "mean_output_tokens": 12.0,
+    "mean_input_tokens": 436.9166666666667,
+    "mean_energy_j": 14.865789737627395
+  },
+  {
+    "dtype": "int4",
+    "prompt": "v6",
+    "cases": 12,
+    "passed": 12,
+    "punctuation_passed": 11,
+    "wording_changed": 0,
+    "outcomes": [
+      {
+        "result": "APPLIED",
+        "count": 11
+      },
+      {
+        "result": "VALIDATION_REJECTED",
+        "count": 1
+      }
+    ],
+    "mean_latency": 1.0786100166709123,
+    "mean_output_tokens": 38.166666666666664,
+    "mean_input_tokens": 661.1666666666666,
+    "mean_energy_j": 45.23994727637688
+  }
+]
