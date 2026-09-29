@@ -110,7 +110,7 @@ class QwenFailureTests(unittest.TestCase):
             backend.model.generate.return_value=torch.tensor([[1,2,3]])
             # Request start, deadline, inference start, end, error latency.
             with patch('qwen_backend.time.perf_counter',side_effect=[0,0,0,2,2,2]):
-                result=backend.process(context)
+                result=backend._process_once(context)
             self.assertEqual(result.error,'RUNTIME_ERROR')
             self.assertIsNone(result.patch)
             if failure is None:

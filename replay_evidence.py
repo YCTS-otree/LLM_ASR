@@ -19,6 +19,7 @@ def main():
     parser.add_argument('--limit',type=int,default=0)
     parser.add_argument('--dtype',choices=['bf16','int4'],default='bf16')
     parser.add_argument('--window-chars', type=int, default=1024)
+    parser.add_argument('--thinking', action='store_true')
     args=parser.parse_args()
     source=sqlite3.connect(args.database.resolve().as_uri()+'?mode=ro',uri=True)
     rows=source.execute('SELECT e.data FROM segments s JOIN evidence e ON s.asr_evidence_ref=e.segment_id ORDER BY s.ordinal').fetchall()
@@ -26,7 +27,8 @@ def main():
     if args.limit:rows=rows[:args.limit]
     output=Path('transcripts/replay')/datetime.now().strftime('%Y%m%d_%H%M%S.sqlite3')
     output.parent.mkdir(parents=True,exist_ok=True)
-    backend=QwenLocalBackend(replace(LocalLLMConfig.from_environment(),dtype=args.dtype))
+    backend=QwenLocalBackend(replace(LocalLLMConfig.from_environment(),dtype=args.dtype,
+        thinking=args.thinking,max_new_tokens=4096 if args.thinking else 1024))
     backend.load()
     store=TranscriptStore(output, window_chars=args.window_chars)
     pipeline=MeetingPipeline(store,backend=backend)

@@ -70,6 +70,8 @@ class Engine:
         self.device_name = torch.cuda.get_device_name(0) if self.device == 'cuda' else 'CPU'
         self.description = f'{self.device_name} · {precision.upper()}'
         self.adapter = ParaformerAdapter(self.model, self.config)
+        from baseline_punctuation import BaselinePunctuation
+        self.punctuation = BaselinePunctuation(MODELS / 'punctuation')
 
     def transcribe(self, segment):
         import torch
@@ -98,6 +100,12 @@ class Engine:
         latency = time.perf_counter() - start
         evidence = make_evidence(segment, result, hypotheses, latency, self.config, warning)
         evidence = replace(evidence, inference_precision=actual_precision, fallback_reason=fallback_reason)
+        if getattr(self, 'punctuation', None):
+            try:
+                evidence = replace(evidence, punctuated_text=self.punctuation.punctuate(evidence.best_text, evidence.end_reason))
+            except Exception as exc:
+                logging.getLogger('meeting_asr').warning('Punctuation failed: %s', type(exc).__name__)
+                evidence = replace(evidence, punctuation_error=type(exc).__name__)
         logging.getLogger('meeting_asr').info(
             'ASR segment=%s duration=%.3f latency=%.3f beam_size=%d nbest=%d returned=%d timestamp=%s',
             segment.segment_id, segment.duration, latency, self.config.beam_size,
@@ -108,3 +116,4 @@ class Engine:
         self.adapter.close()
         self.adapter = None
         self.model = None
+        self.punctuation = None
