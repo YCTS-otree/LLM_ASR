@@ -26,10 +26,13 @@ class CorrectionContext:
     readable_right: str = ''
     focused: bool = False
     punctuation_only: bool = False
+    punctuation_mode: str = 'combined'
+    glossary: tuple = ()
 
 
 class ContextBuilder:
-    def build(self, store, stable):
+    def build(self, store, stable, punctuation_mode='combined', glossary=()):
+        from pause_evidence import pause_hints
         snapshot = store.snapshot()
         boundaries = []
         offset = 0
@@ -41,11 +44,12 @@ class ContextBuilder:
                     start=max(offset, snapshot.window_start)-snapshot.window_start,
                     end=end-snapshot.window_start, end_reason=evidence['end_reason'],
                     pause_after_ms=evidence.get('pause_after_ms'),
+                    timing=pause_hints(evidence) if punctuation_mode!='baseline' else None,
                     best_text=evidence['best_text'],nbest=evidence.get('nbest',[])))
             offset = end
         return CorrectionContext(snapshot, stable.evidence,
                                  readable_context=snapshot.text[max(0, snapshot.window_start - 256):snapshot.window_start],
-                                 segments=tuple(boundaries))
+                                 segments=tuple(boundaries),punctuation_mode=punctuation_mode,glossary=tuple(glossary))
 
 
 class LLMBackend(Protocol):
@@ -159,7 +163,15 @@ class CorrectionWorker(threading.Thread):
 
 
 class MeetingPipeline:
-    def __init__(self, store, changed=lambda: None, backend=None):
+    def __init__(self, store, changed=lambda: None, backend=None, punctuation_mode='combined', glossary=None):
+        from pause_evidence import PUNCTUATION_MODES
+        if punctuation_mode not in PUNCTUATION_MODES:raise ValueError('Invalid punctuation mode')
+        self.punctuation_mode=punctuation_mode
+        from glossary import load_terms
+        try:self.glossary=tuple(load_terms() if glossary is None else glossary)
+        except (OSError,ValueError):
+            self.glossary=()
+            store.record_event('GLOSSARY_UNAVAILABLE',{'detail':'术语库不可用，请检查JSON格式；本次未使用术语库'})
         from evidence import StabilityBuffer
         self.store, self.changed = store, changed
         self.stability = StabilityBuffer()
@@ -172,8 +184,8 @@ class MeetingPipeline:
     def accept(self, evidence):
         stable = self.stability.push(evidence)
         with self.store.lock:
-            self.store.append(stable)
-            context = self.context.build(self.store, stable)
+            self.store.append(stable,use_baseline=self.punctuation_mode!='pauses')
+            context = self.context.build(self.store, stable,self.punctuation_mode,self.glossary)
         self.changed()
         if evidence.best_text and getattr(self.worker.backend, 'enabled', True) and getattr(self.worker.backend, 'ready', True):
             self.worker.submit(context)

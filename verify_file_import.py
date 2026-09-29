@@ -16,6 +16,7 @@ def main():
     parser.add_argument('--comparison-dtype',choices=['bf16','int4'],default='int4')
     parser.add_argument('--sessions',type=int,choices=[1,2,3],default=1)
     parser.add_argument('--window-chars',type=int,default=1024)
+    parser.add_argument('--punctuation-mode',choices=['baseline','pauses','combined'],default='combined')
     args=parser.parse_args()
     os.environ['LOCAL_LLM_DTYPE']=args.dtype
     from PySide6.QtWidgets import QApplication
@@ -31,6 +32,7 @@ def main():
     if font>=0:app.setFont(QFont(QFontDatabase.applicationFontFamilies(font)[0],10))
     window=Window()
     window.writable_window.setValue(args.window_chars)
+    window.punctuation_mode.setCurrentIndex(window.punctuation_mode.findData(args.punctuation_mode))
     window.correction_model.setCurrentIndex(window.correction_model.findData(args.mode))
     window.llm_precision.setCurrentIndex(window.llm_precision.findData(args.dtype))
     window.comparison_precision.setCurrentIndex(window.comparison_precision.findData(args.comparison_dtype))

@@ -2,8 +2,8 @@ import os
 os.environ['QT_QPA_PLATFORM'] = 'offscreen'
 import unittest
 from unittest.mock import Mock, patch
-from PySide6.QtWidgets import QApplication
-from PySide6.QtCore import Qt
+from PySide6.QtWidgets import QApplication, QDialog, QSpinBox, QComboBox
+from PySide6.QtCore import Qt, QTimer
 from app import Window
 from transcript_store import TranscriptStore
 from evidence import ASREvidence, StabilityBuffer
@@ -165,6 +165,25 @@ class WindowTests(unittest.TestCase):
             self.window.prepare_local_model()
             loader.return_value.start.assert_called_once()
         self.window.llm_loader=None
+
+    def test_request_dialog_saves_staged_parameters_without_loading(self):
+        for mode in ('2b','deepseek'):
+            self.window.correction_model.setCurrentIndex(self.window.correction_model.findData(mode))
+            before=self.window.local_backend
+            def accept_settings():
+                dialog=self.app.activeModalWidget()
+                self.assertIsInstance(dialog,QDialog)
+                controls=dialog.findChildren(QSpinBox)
+                controls[0].setValue(1024);controls[1].setValue(2048)
+                dialog.accept()
+            with patch('app.LocalModelLoader') as loader:
+                QTimer.singleShot(0,accept_settings)
+                self.window.edit_api_settings()
+                loader.assert_not_called()
+            selected=self.window.selected_correction_config()[0]
+            self.assertEqual(selected.target_chars,1024)
+            self.assertEqual(selected.output_token_limit if mode=='deepseek' else selected.max_new_tokens,2048)
+            self.assertIs(self.window.local_backend,before)
 
     def test_layout_at_default_and_smaller_window(self):
         self.window.show()

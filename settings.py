@@ -30,9 +30,13 @@ class LocalLLMConfig:
     debounce_seconds: float = 0.35
     model_size: str = '2b'
     thinking: bool = False
+    target_chars: int = 128
+    retry_unchanged: bool = True
 
     def __post_init__(self):
         from qwen_spec import MODEL_SPECS
+        if type(self.target_chars) is not int or not 64 <= self.target_chars <= 2048:
+            raise ValueError('Invalid target size')
         if self.model_size not in MODEL_SPECS:
             raise ValueError('Invalid Qwen model size')
         if self.dtype not in ('bf16', 'fp16', 'int4') or self.protocol not in ('relative', 'anchored'):

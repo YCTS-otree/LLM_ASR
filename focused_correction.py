@@ -6,16 +6,18 @@ from transcript_store import TranscriptSnapshot
 FOCUS_CHARS = 128
 
 
-def focused_contexts(context):
+def focused_contexts(context, target_chars=FOCUS_CHARS):
+    if type(target_chars) is not int or not 64 <= target_chars <= 2048:
+        raise ValueError('Invalid target size')
     s=context.snapshot
     # Revisit ALL editable history after new evidence arrives. Read spans overlap;
     # write spans have a single owner, so context is never appended twice.
     start=s.window_start
     targets=[]
     while start<s.window_end:
-        end=min(start+FOCUS_CHARS,s.window_end)
+        end=min(start+target_chars,s.window_end)
         if end<s.window_end:
-            boundary=max((s.text.rfind(mark,start+FOCUS_CHARS//2,end) for mark in '。？！；，'),default=-1)
+            boundary=max((s.text.rfind(mark,start+target_chars//2,end) for mark in '。？！；，'),default=-1)
             if boundary>=0:end=boundary+1
         # Avoid cutting a Latin word/number in half when a nearby boundary exists.
         if end<s.window_end and s.text[end-1].isascii() and s.text[end-1].isalnum() and s.text[end].isascii() and s.text[end].isalnum():

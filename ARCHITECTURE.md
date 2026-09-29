@@ -1,10 +1,10 @@
-# Contextual transcript infrastructure — v1.5.1
+# Contextual transcript infrastructure — v1.6.0
 
 ## Current behavior (supersedes historical version notes below)
 
 The UI default writable window is 2048 characters. Every new segment revisits
-ALL editable history, including finished sentences. Targets have at most 128
-characters, preferring punctuation/Latin word boundaries. Read spans overlap
+ALL editable history, including finished sentences. Target limits are configurable
+from64 to2048 characters (Qwen default128, DeepSeek512), preferring punctuation/Latin word boundaries. Read spans overlap
 and include all other text in the window; write ownership does not overlap.
 Frozen history remains immutable. Audio still uses maximum 15-second segments;
 text context cannot recover audio missed by ASR.
@@ -16,10 +16,12 @@ revision/frozen/range/overlap checks, with 256 operations, 1024 inserted/removed
 characters per batch, and 128 removed characters per operation. These bounds
 are not proof that the model's proposed words are semantically correct.
 
-An independent CPU CT-Transformer punctuation model seeds current_text; raw ASR
-and evidence.best_text are unchanged. Punctuation failures are audited. Qwen
-optionally enables thinking (4096 output tokens versus 1024 normally), only
-parsing/logging final answers, with a 600-second batch deadline.
+An independent CPU CT-Transformer punctuation model seeds current_text in baseline
+and combined modes; pauses-only mode seeds raw text. Both evidence forms stay
+immutable. 20ms RMS measurements identify low-energy spans of at least120ms;
+timestamp-aligned word hints are explicitly approximate and otherwise time-only.
+Qwen optionally enables thinking. Output defaults to1024 tokens, configurable
+to8192; batch timeout defaults600 seconds, configurable to1800.
 
 DeepSeek uses the same target/patch flow through HTTPS chat completions. Its key
 is used in memory only; when the UI key is blank, explicit Load model reads
@@ -27,10 +29,23 @@ DEEPSEEK.key relative to the process working directory (including reloads).
 The application never creates/rewrites that file or displays its contents.
 Redirects are blocked; errors expose codes only. No audio,
 raw response or reasoning is logged/sent as additional data. Requests send
-transcript/context/candidates, with 8192 output tokens and a 120-second socket
-timeout. Network/auth failures are not automatically retried. Load model checks
+transcript/context/candidates, relevant terminology and selected pause hints.
+Output defaults8192 tokens (256–32768 configurable), request timeout180 seconds
+(5–600 configurable), bounded by the batch deadline. Thinking effort is
+low/high/max; temperature is sent only without thinking. Unchanged-result
+punctuation retries default off for API and on for local Qwen. Metadata tracks
+request count, token usage, reasoning-token count and written-number normalization.
+Network/auth failures are not automatically retried. Load model checks
 configuration, not remote authentication. Earlier version notes below describe
 historical candidate-only/short-tail policies, not current behavior.
+
+Focused full-text answers pass lexical drift guards before deterministic, narrow
+number/unit formatting. Minimal diffs are then validated with unchanged patch
+limits; a large input target does not authorize a large replacement. Trimming
+common edges prevents repeated text from shifting single punctuation edits.
+An optional runtime glossary.json supplies at most8 matched reference entries;
+it never substitutes text directly. The bundled example includes a user-supplied
+phone name, so tests using it are terminology-assisted, not blind benchmarks.
 
 ## Scope and principles
 

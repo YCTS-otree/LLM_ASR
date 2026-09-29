@@ -61,7 +61,7 @@ class Session(QThread):
     saved = Signal(str)
     error = Signal(str)
 
-    def __init__(self, device, precision, microphone, folder, threshold, host, config, backend=None, input_path=None, window_chars=1024):
+    def __init__(self, device, precision, microphone, folder, threshold, host, config, backend=None, input_path=None, window_chars=1024, punctuation_mode='combined'):
         super().__init__()
         self.options = device, precision, microphone, folder, threshold
         self.stop_event = threading.Event()
@@ -71,6 +71,9 @@ class Session(QThread):
         self.backend = backend
         self.input_path = input_path
         self.window_chars = window_chars
+        from pause_evidence import PUNCTUATION_MODES
+        if punctuation_mode not in PUNCTUATION_MODES:raise ValueError('Invalid punctuation mode')
+        self.punctuation_mode=punctuation_mode
 
     def request_stop(self, reason='manual_stop'):
         self.stop_reason = reason
@@ -115,6 +118,7 @@ class Session(QThread):
                                                 'precision': precision, 'beam_size': self.config.beam_size,
                                                 'nbest': self.config.nbest,
                                                 'window_chars': self.window_chars,
+                                                'punctuation_mode': self.punctuation_mode,
                                                 'backend': getattr(branch_backend, 'source', 'MOCK_LLM'),
                                                 'comparison_id': stem if len(backends)==2 else None,
                                                 'correction_model': getattr(branch_backend, 'model_id', None),
@@ -126,7 +130,7 @@ class Session(QThread):
                 # state, so cross-thread delivery cannot repaint an old snapshot.
                 self.text.emit('')
             for branch_store, branch_backend in zip(stores,backends):
-                pipelines.append(MeetingPipeline(branch_store, changed, branch_backend))
+                pipelines.append(MeetingPipeline(branch_store, changed, branch_backend,punctuation_mode=self.punctuation_mode))
             def record_event(kind, data):
                 for branch_store in stores:
                     branch_store.record_event(kind, data)
@@ -146,6 +150,8 @@ class Session(QThread):
                     continue
                 try:
                     evidence = engine.transcribe(chunk)
+                    from pause_evidence import energy_pauses
+                    evidence=replace(evidence,low_energy_spans=energy_pauses(chunk.audio,chunk.audio_rate,threshold),pause_threshold=threshold)
                 except Exception as exc:
                     failed_segments += 1
                     logger.exception('ASR failed segment=%s', chunk.segment_id)
@@ -229,6 +235,8 @@ class Window(QMainWindow):
         self.local_backend = CorrectionModels(llm_config, self.llm_state_changed.emit)
         self.closing = False
         self.setWindowTitle(f'本地语音转写 · FunASR Paraformer-large · v{__version__}')
+        self.glossary_action=QPushButton('术语库')
+        self.glossary_action.clicked.connect(self.edit_glossary)
         self.resize(900, 700)
         central = QWidget()
         self.setCentralWidget(central)
@@ -239,7 +247,7 @@ class Window(QMainWindow):
         layout.addWidget(title)
         layout.addWidget(QLabel('录音 → Paraformer + 基础标点 → 上下文校对 → 版本化转录'))
         form = QFormLayout()
-        form.setVerticalSpacing(3)
+        form.setVerticalSpacing(1)
         self.model = QComboBox()
         self.model.addItem('达摩 Paraformer-large · 220M · 中文（ModelScope 国内源）')
         form.addRow('识别模型', self.model)
@@ -266,7 +274,15 @@ class Window(QMainWindow):
         self.threshold.setSingleStep(.001)
         self.threshold.setValue(.008)
         self.threshold.setToolTip('声音较轻时调低；环境噪声较大时调高。')
-        form.addRow('声音触发阈值', self.threshold)
+        self.punctuation_mode=QComboBox()
+        for label,value in [('基础标点 + 停顿','combined'),('仅基础标点','baseline'),('仅停顿证据','pauses')]:
+            self.punctuation_mode.addItem(label,value)
+        self.punctuation_mode.setToolTip('新会话生效，无需重载模型。基础标点是文本模型预测；停顿是低能量估计。仅停顿模式不使用基础标点初始化文本，但仍保留其证据。')
+        punctuation_row=QHBoxLayout()
+        punctuation_row.addWidget(self.threshold)
+        punctuation_row.addWidget(QLabel('标点策略'))
+        punctuation_row.addWidget(self.punctuation_mode,1)
+        form.addRow('声音触发阈值', punctuation_row)
         self.folder = QLineEdit(str(ROOT / 'transcripts'))
         outrow = QHBoxLayout()
         outrow.addWidget(self.folder)
@@ -299,11 +315,12 @@ class Window(QMainWindow):
         self.thinking = QCheckBox('Qwen 思考')
         self.thinking.setToolTip('启用后允许模型先推理再校对，速度较慢；需点击 Load model 应用。')
         self.thinking.toggled.connect(self.models_pending)
-        self.api_settings = QPushButton('DeepSeek 设置')
+        self.api_settings = QPushButton('LLM 请求设置')
         self.api_settings.clicked.connect(self.edit_api_settings)
         self.proofreading_options = QHBoxLayout()
         self.proofreading_options.addWidget(self.thinking)
         self.proofreading_options.addWidget(self.api_settings)
+        self.proofreading_options.addWidget(self.glossary_action)
         self.writable_window = QSpinBox()
         self.writable_window.setRange(256, 4096)
         self.writable_window.setSingleStep(256)
@@ -445,12 +462,29 @@ class Window(QMainWindow):
         self.state.setText('参数已选择 · 点击 Load model 应用；不会自动加载。')
 
     def edit_api_settings(self):
+        online=self.correction_model.currentData()=='deepseek'
+        config=self.deepseek_config if online else self.base_llm_config
         dialog=QDialog(self)
-        dialog.setWindowTitle('DeepSeek API')
+        dialog.setWindowTitle('DeepSeek 请求设置' if online else 'Qwen 请求设置')
         layout=QFormLayout(dialog)
-        note=QLabel('启用后向 api.deepseek.com 发送转录文字、候选和上下文，不上传音频。\nAPI 按服务商规则计费。输入框留空时，Load model 读取当前运行目录的 DEEPSEEK.key；程序不回写密钥。')
+        note=QLabel('每次只修改目标片段，同时提供回改窗口中的前后文。目标越长，请求越少，但单次生成更长。\n保存后点击 Load model 应用。回改窗口在主界面设置，新会话生效。'+('\nDeepSeek 会接收文字、候选、匹配术语和停顿信息，不接收音频；按服务商规则计费。密钥留空则从运行目录 DEEPSEEK.key 读取。' if online else '\n本地小模型建议从128字开始；较长目标可能增加漏改和格式错误。'))
         note.setWordWrap(True)
+        note.setMaximumWidth(560)
         layout.addRow(note)
+        def integer(value,minimum,maximum,suffix=''):
+            widget=QSpinBox();widget.setRange(minimum,maximum);widget.setValue(int(value));widget.setSuffix(suffix)
+            return widget
+        target=integer(config.target_chars,64,2048,' 字')
+        tokens=integer(config.output_token_limit if online else config.max_new_tokens,256,32768 if online else 8192)
+        batch=integer(config.timeout_seconds,30,1800,' 秒')
+        layout.addRow('单次校对目标上限',target)
+        layout.addRow('输出 token 上限',tokens)
+        layout.addRow('整轮校对超时',batch)
+        retry=QCheckBox('无修改时追加一次标点校对（增加请求）')
+        retry.setChecked(config.retry_unchanged)
+        layout.addRow(retry)
+        inputs=integer(config.max_input_tokens,512,16384)
+        if not online:layout.addRow('输入 token 上限',inputs)
         model=QComboBox()
         model.setEditable(True)
         model.addItems(['deepseek-flash','deepseek-v4-pro'])
@@ -460,20 +494,66 @@ class Window(QMainWindow):
         key.setPlaceholderText('留空读取 DEEPSEEK.key')
         think=QCheckBox('启用思考')
         think.setChecked(self.deepseek_config.thinking)
-        layout.addRow('模型 ID',model)
-        layout.addRow('API Key',key)
-        layout.addRow(think)
+        effort=QComboBox();effort.addItems(['low','high','max']);effort.setCurrentText(self.deepseek_config.reasoning_effort)
+        timeout=integer(self.deepseek_config.request_timeout,5,600,' 秒')
+        temperature=QDoubleSpinBox();temperature.setRange(0,2);temperature.setSingleStep(.1);temperature.setValue(self.deepseek_config.temperature)
+        effort.setEnabled(think.isChecked());temperature.setEnabled(not think.isChecked())
+        think.toggled.connect(effort.setEnabled);think.toggled.connect(lambda enabled:temperature.setEnabled(not enabled))
+        if online:
+            layout.addRow('模型 ID',model)
+            layout.addRow('API Key',key)
+            layout.addRow(think)
+            layout.addRow('推理深度',effort)
+            layout.addRow('温度（仅关闭思考时）',temperature)
+            layout.addRow('单次请求超时',timeout)
         buttons=QDialogButtonBox(QDialogButtonBox.Ok|QDialogButtonBox.Cancel)
         buttons.accepted.connect(dialog.accept)
         buttons.rejected.connect(dialog.reject)
         layout.addRow(buttons)
         if dialog.exec()==QDialog.Accepted:
-            if model.currentText().strip():
-                self.deepseek_config=replace(self.deepseek_config,api_model=model.currentText().strip(),api_key=key.text().strip(),thinking=think.isChecked())
+            if not online:
+                self.base_llm_config=replace(config,target_chars=target.value(),max_new_tokens=tokens.value(),max_input_tokens=inputs.value(),timeout_seconds=batch.value(),retry_unchanged=retry.isChecked())
+                self.models_pending()
+            elif model.currentText().strip():
+                self.deepseek_config=replace(self.deepseek_config,api_model=model.currentText().strip(),api_key=key.text().strip(),thinking=think.isChecked(),
+                    target_chars=target.value(),output_token_limit=tokens.value(),timeout_seconds=batch.value(),
+                    retry_unchanged=retry.isChecked(),
+                    reasoning_effort=effort.currentText(),request_timeout=timeout.value(),temperature=temperature.value())
                 self.models_pending()
             else:
                 self.state.setText('DeepSeek 模型 ID 不能为空，未修改配置。')
         key.clear()
+
+    def edit_glossary(self):
+        import json
+        from glossary import load_terms,validate_terms,DEFAULT_FILE
+        dialog=QDialog(self)
+        dialog.setWindowTitle('术语库 · glossary.json')
+        dialog.resize(640,480)
+        layout=QVBoxLayout(dialog)
+        note=QLabel('保存到当前运行目录的 glossary.json，新会话生效，无需重载模型。\n匹配的词条作为参考随文本发送给所选LLM；不直接替换原文。')
+        note.setWordWrap(True);layout.addWidget(note)
+        editor=QPlainTextEdit();layout.addWidget(editor,1)
+        status=QLabel();status.setWordWrap(True);layout.addWidget(status)
+        try:editor.setPlainText(json.dumps(load_terms(),ensure_ascii=False,indent=2))
+        except (OSError,ValueError):
+            editor.setPlainText('[]');status.setText('现有术语库不可读；仅点击保存才会覆盖。')
+        buttons=QDialogButtonBox(QDialogButtonBox.Save|QDialogButtonBox.Cancel)
+        layout.addWidget(buttons)
+        buttons.rejected.connect(dialog.reject)
+        def save():
+            try:
+                data=validate_terms(json.loads(editor.toPlainText()))
+                temporary=DEFAULT_FILE.with_suffix('.json.tmp')
+                temporary.write_text(json.dumps(data,ensure_ascii=False,indent=2),encoding='utf-8')
+                temporary.replace(DEFAULT_FILE)
+            except (OSError,ValueError):
+                status.setText('保存失败：请检查JSON、term/aliases/note字段及目录写权限。')
+                return
+            self.state.setText('术语库已保存 · 下次会话生效，无需重载模型。')
+            dialog.accept()
+        buttons.accepted.connect(save)
+        dialog.exec()
 
     def selected_correction_config(self):
         mode = self.correction_model.currentData()
@@ -481,7 +561,7 @@ class Window(QMainWindow):
             return self.deepseek_config,mode,self.comparison_precision.currentData()
         size = '2b' if mode == 'both' else mode
         config = replace(self.base_llm_config, model_size=size, dtype=self.llm_precision.currentData(),
-                         thinking=self.thinking.isChecked(),max_new_tokens=4096 if self.thinking.isChecked() else 1024,
+                         thinking=self.thinking.isChecked(),
                          model_path=self.base_llm_config.model_path if size == self.base_llm_config.model_size else str(MODEL_SPECS[size]['path']))
         return config, mode, self.comparison_precision.currentData()
 
@@ -545,6 +625,9 @@ class Window(QMainWindow):
                 title.setWordWrap(True)
                 title.setText(getattr(member,'model_id',f'Qwen3.5-{member.config.model_size.upper()}') +
                               (f' · {latency:.2f}s · {outcome}' if latency is not None else ''))
+                title.setToolTip('' if not latest else
+                    f'本轮请求：{latest.get("request_count", "未知")}；输入 tokens：{latest.get("input_tokens", 0)}；输出 tokens：{latest.get("output_tokens", 0)}；推理 tokens：{latest.get("reasoning_tokens", 0)}\n'
+                    f'包含数字单位规则规范化：{"是" if latest.get("written_number_normalization") else "否"}')
 
     def load_microphones(self, refresh=False):
         if self.session and self.session.isRunning():
@@ -586,7 +669,7 @@ class Window(QMainWindow):
 
     def set_busy(self, busy):
         for widget in (self.start, self.import_button, self.model, self.device, self.microphone, self.refresh,
-                       self.thinking,self.api_settings,
+                       self.thinking,self.api_settings,self.punctuation_mode,self.glossary_action,
                        self.folder, self.browse, self.threshold, self.precision, self.correction_model, self.llm_precision, self.comparison_precision, self.writable_window, self.load_button):
             widget.setEnabled(not busy)
         self.stop.setEnabled(busy)
@@ -624,7 +707,7 @@ class Window(QMainWindow):
         self.session = Session(self.device.currentData(), self.precision.currentData(),
                                self.microphone.currentData(),
                                self.folder.text(), self.threshold.value(), self.host, self.config, self.local_backend, input_path,
-                               window_chars=self.writable_window.value())
+                               window_chars=self.writable_window.value(),punctuation_mode=self.punctuation_mode.currentData())
         self.session.status.connect(self.state.setText)
         self.session.text.connect(self.refresh_transcript)
         self.session.level.connect(lambda rms: self.meter.setValue(min(100, int(rms * 500))))
