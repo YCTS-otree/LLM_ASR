@@ -5,6 +5,7 @@ import time
 import uuid
 import urllib.request
 import urllib.error
+from pathlib import Path
 from settings import LocalLLMConfig
 from qwen_backend import QwenLocalBackend
 from llm_protocol import (BackendResult, PROMPT_VERSION, build_messages,
@@ -16,6 +17,7 @@ from patches import PatchRejected
 class DeepSeekConfig(LocalLLMConfig):
     api_model: str = 'deepseek-flash'
     api_key: str = field(default='', repr=False)
+    api_key_file: str = 'DEEPSEEK.key'
     thinking: bool = True
     max_new_tokens: int = 8192
 
@@ -33,13 +35,32 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
 class DeepSeekBackend(QwenLocalBackend):
     source = 'ONLINE_LLM'
 
+    def __init__(self, config, status=lambda state: None):
+        super().__init__(config,status)
+        self._api_key = ''
+
     @property
     def model_id(self):
         return self.config.api_model
 
     def load(self):
-        if not self.config.api_key.strip():
-            raise ValueError('请在 DeepSeek 设置中输入 API Key（仅保存在内存）')
+        # Resolve only at explicit Load model, never at import/UI construction.
+        # Do not put file contents in configuration repr, exceptions or status.
+        self._api_key = ''
+        self.ready = False
+        value=self.config.api_key.strip()
+        if not value:
+            try:
+                with Path(self.config.api_key_file).open('r',encoding='utf-8-sig') as stream:
+                    value=stream.read(4097)
+                if len(value)>4096:
+                    raise ValueError('DEEPSEEK.key 文件过长，请仅保存密钥文本。')
+                value=value.strip()
+            except (OSError,UnicodeError):
+                raise ValueError('无法读取 DEEPSEEK.key，请在当前运行目录放置 UTF-8 密钥文本，或在设置中输入。') from None
+        if not value or len(value)>4096 or any(c.isspace() or not c.isascii() or not c.isprintable() for c in value):
+            raise ValueError('DeepSeek 密钥为空或格式无效：应为单个密钥文本，可带首尾换行。')
+        self._api_key=value
         if not self.ready:
             self.ready = True
             self.load_count += 1
@@ -60,7 +81,7 @@ class DeepSeekBackend(QwenLocalBackend):
                          thinking=dict(type='enabled' if self.config.thinking else 'disabled'))
             request=urllib.request.Request('https://api.deepseek.com/chat/completions',
                 data=json.dumps(payload,ensure_ascii=False).encode('utf-8'),
-                headers={'Authorization':'Bearer '+self.config.api_key.strip(),'Content-Type':'application/json'},method='POST')
+                headers={'Authorization':'Bearer '+self._api_key,'Content-Type':'application/json'},method='POST')
             self.status('DeepSeek 校对中 · 正在发送转录文字')
             chunks=[]
             received=0
@@ -95,3 +116,7 @@ class DeepSeekBackend(QwenLocalBackend):
             return BackendResult(None,dict(metadata,detail=detail,latency=time.perf_counter()-start),'API_ERROR')
         finally:
             self.status('已配置' if self.enabled else 'Disabled')
+
+    def close(self):
+        super().close()
+        self._api_key = ''

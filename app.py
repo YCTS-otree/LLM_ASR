@@ -411,7 +411,7 @@ class Window(QMainWindow):
             self.prepare_local_model()
 
     def prepare_local_model(self):
-        if self.local_backend.ready or (self.llm_loader and self.llm_loader.isRunning()):
+        if (self.local_backend.ready and self.local_backend.mode!='deepseek') or (self.llm_loader and self.llm_loader.isRunning()):
             return
         self.llm_loader = LocalModelLoader(self.local_backend)
         self.set_busy(True)
@@ -448,7 +448,7 @@ class Window(QMainWindow):
         dialog=QDialog(self)
         dialog.setWindowTitle('DeepSeek API')
         layout=QFormLayout(dialog)
-        note=QLabel('启用后向 api.deepseek.com 发送转录文字、候选和上下文，不上传音频。\nAPI 按服务商规则计费；密钥仅在本次运行内保存。')
+        note=QLabel('启用后向 api.deepseek.com 发送转录文字、候选和上下文，不上传音频。\nAPI 按服务商规则计费。输入框留空时，Load model 读取当前运行目录的 DEEPSEEK.key；程序不回写密钥。')
         note.setWordWrap(True)
         layout.addRow(note)
         model=QComboBox()
@@ -457,6 +457,7 @@ class Window(QMainWindow):
         model.setCurrentText(self.deepseek_config.api_model)
         key=QLineEdit(self.deepseek_config.api_key)
         key.setEchoMode(QLineEdit.Password)
+        key.setPlaceholderText('留空读取 DEEPSEEK.key')
         think=QCheckBox('启用思考')
         think.setChecked(self.deepseek_config.thinking)
         layout.addRow('模型 ID',model)

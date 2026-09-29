@@ -153,3 +153,15 @@
 - Final60-second offline check: four complete segments, no ASR/punctuation failures or queue drops, matching UI/SQLite/TXT and unchanged source. Baseline punctuation23 marks, final25; punctuation count is not accuracy.
 - Reference character difference remains9.76% before and after Qwen. Thinking probe exhausted4096 tokens without a final answer; thinking defaults off. Meeting-quality acceptance remains unmet.
 - DeepSeek transport is mock-tested, not live-tested without a user API key. No fresh0.8B/dual quantization quality run. See BENCHMARK_v1.5.0.md.
+
+## v1.5.1 - 2026-09-29
+
+### Added
+- Blank DeepSeek key input now loads DEEPSEEK.key from the current process working directory on explicit Load model. Accepts UTF-8 BOM and surrounding whitespace; manual input takes precedence.
+
+### Fixed
+- Clicking Load model rereads API credentials even when already configured; failed reload clears the previous credential and readiness.
+- Missing, malformed or oversized key files produce content-free errors. The application never creates/rewrites the file or displays its contents; existing *.key Git exclusion remains in effect.
+
+### Notes
+-107 tests passed using temporary dummy credentials only. API settings GUI inspected. No real key was read and no live API request was made.

@@ -157,6 +157,15 @@ class WindowTests(unittest.TestCase):
         self.window.set_busy(True)
         self.assertFalse(self.window.api_settings.isEnabled())
 
+    def test_explicit_api_load_rereads_credentials_even_when_ready(self):
+        self.window.correction_model.setCurrentIndex(self.window.correction_model.findData('deepseek'))
+        self.window.apply_correction_selection()
+        self.window.local_backend.members[0].ready=True
+        with patch('app.LocalModelLoader') as loader:
+            self.window.prepare_local_model()
+            loader.return_value.start.assert_called_once()
+        self.window.llm_loader=None
+
     def test_layout_at_default_and_smaller_window(self):
         self.window.show()
         for width, height in [(900, 700), (720, 600)]:

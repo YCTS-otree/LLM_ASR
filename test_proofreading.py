@@ -1,5 +1,8 @@
 import json
 import unittest
+import tempfile
+import os
+from pathlib import Path
 from dataclasses import replace
 from unittest.mock import Mock, patch
 import urllib.error
@@ -128,6 +131,51 @@ class DeepSeekTests(unittest.TestCase):
         self.assertIsNone(NoRedirect().redirect_request(None,None,302,'',{},'https://other.invalid'))
 
     def test_missing_key_does_not_call_network(self):
-        with patch('deepseek_backend.urllib.request.build_opener') as network:
-            with self.assertRaises(ValueError):DeepSeekBackend(DeepSeekConfig()).load()
+        with tempfile.TemporaryDirectory() as folder,patch('deepseek_backend.urllib.request.build_opener') as network:
+            with self.assertRaises(ValueError):DeepSeekBackend(DeepSeekConfig(api_key_file=str(Path(folder)/'missing.key'))).load()
             network.assert_not_called()
+
+    def test_key_file_bom_whitespace_reload_and_close(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path=Path(folder)/'DEEPSEEK.key'
+            path.write_text('\ufeff  unit-test-file-token\n',encoding='utf-8')
+            backend=DeepSeekBackend(DeepSeekConfig(api_key_file=str(path)))
+            self.assertFalse(backend.ready)
+            backend.load()
+            self.assertEqual(backend._api_key,'unit-test-file-token')
+            self.assertNotIn('unit-test-file-token',repr(backend.config))
+            path.write_text('unit-test-replacement\n',encoding='utf-8')
+            backend.load()
+            self.assertEqual(backend._api_key,'unit-test-replacement')
+            backend.close()
+            self.assertEqual(backend._api_key,'')
+
+    def test_invalid_file_clears_previous_key_and_redacts_content(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path=Path(folder)/'DEEPSEEK.key'
+            backend=DeepSeekBackend(DeepSeekConfig(api_key_file=str(path)))
+            for invalid in ['', 'unit-test-secret\nsecond-line', 'x'*4097, '非ASCII']:
+                path.write_text(invalid,encoding='utf-8')
+                backend._api_key='old-placeholder';backend.ready=True
+                with self.assertRaises(ValueError) as error:backend.load()
+                self.assertNotIn('unit-test-secret',str(error.exception))
+                self.assertEqual(backend._api_key,'')
+                self.assertFalse(backend.ready)
+
+    def test_manual_key_takes_precedence_without_reading_file(self):
+        backend,_=self.setup_backend()
+        with patch('deepseek_backend.Path.open',side_effect=AssertionError('must not read file')):
+            backend.load()
+        self.assertEqual(backend._api_key,'unit-test-placeholder')
+
+    def test_default_file_is_relative_to_runtime_directory(self):
+        original=Path.cwd()
+        with tempfile.TemporaryDirectory() as folder:
+            try:
+                os.chdir(folder)
+                Path('DEEPSEEK.key').write_text('unit-test-runtime-token\n',encoding='utf-8')
+                backend=DeepSeekBackend(DeepSeekConfig())
+                backend.load()
+                self.assertEqual(backend._api_key,'unit-test-runtime-token')
+                backend.close()
+            finally:os.chdir(original)

@@ -1,4 +1,4 @@
-# Contextual transcript infrastructure — v1.5.0
+# Contextual transcript infrastructure — v1.5.1
 
 ## Current behavior (supersedes historical version notes below)
 
@@ -22,7 +22,10 @@ optionally enables thinking (4096 output tokens versus 1024 normally), only
 parsing/logging final answers, with a 600-second batch deadline.
 
 DeepSeek uses the same target/patch flow through HTTPS chat completions. Its key
-is memory-only; redirects are blocked; errors expose codes only. No audio,
+is used in memory only; when the UI key is blank, explicit Load model reads
+DEEPSEEK.key relative to the process working directory (including reloads).
+The application never creates/rewrites that file or displays its contents.
+Redirects are blocked; errors expose codes only. No audio,
 raw response or reasoning is logged/sent as additional data. Requests send
 transcript/context/candidates, with 8192 output tokens and a 120-second socket
 timeout. Network/auth failures are not automatically retried. Load model checks
