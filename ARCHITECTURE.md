@@ -351,3 +351,18 @@ ASR 0 -> LLM 0 -> ASR 1 -> LLM 1 with a deliberately slower backend. Microphone
 capture remains asynchronous with bounded queues. replay_evidence reads old
 ASR evidence through a read-only connection and writes a separate result store;
 it never changes the source session or implies a new ASR measurement.
+
+## v1.4.1 explicit load and completeness
+
+Window stages model/precision selections without touching resident weights.
+Load model applies the pending correction group and asynchronously loads/reuses
+ASR then enabled local models. Beginning capture/import requires matching,
+ready models; changing only output directory, threshold or writable window does
+not require weight reload. Re-enabling an unloaded model does not start loading.
+
+An AMP IndexError during ASR retries the same samples and resident model once
+with CUDA autocast disabled. Evidence records inference_precision and
+fallback_reason, and Session writes ASR_PRECISION_FALLBACK. Persistent errors
+remain ASR_FAILED. Offline verification now rejects any ASR_FAILED event.
+Reference subtitle comparison is evaluation-only and never changes prompts or
+transcripts. A successful application test is not speech-quality acceptance.

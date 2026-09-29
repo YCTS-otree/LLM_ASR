@@ -117,6 +117,22 @@
 
 ## v1.4.1 - 2026-09-29
 
+### Added
+- Explicit Load model button: startup, model/precision edits and re-enabling correction no longer trigger automatic loading. Parameter edits remain pending until requested.
+- Local ASS reference comparison tool with timestamp range selection and punctuation-insensitive character edit distance; reference text stays outside model inputs.
+
+### Fixed
+- Precision-dependent Paraformer FP16 CIF failure that omitted the first 15 seconds of a clean voiceover. AMP IndexError now retries the same audio once with FP32 and records actual precision/recovery reason.
+- Offline verification now fails on ASR_FAILED events instead of treating zero queue drops and matching saved output as proof of completeness.
+- Beginning a session with unloaded/changed model settings prompts for Load model without silently loading or capturing.
+
+### Notes
+- All 92 automated tests passed; actual single/dual Qt layouts inspected at 900x700 and 720x600.
+- Same 60-second sample now covers all four 15-second segments with one audited FP32 recovery and zero ASR failures. Source unchanged; UI, SQLite and TXT match.
+- Against separately supplied edited AI subtitles, character difference rate decreased from 37.73% to 9.76% by recovering missing speech. Current LLM did not further reduce lexical difference. Numeral/product-name formatting also contributes to this metric.
+- Corrected v1.4.0's incomplete functional-test claim in its report. Meeting-quality acceptance is not met; bounded lexical-correction experiment showed no improvement and was not adopted. No model switch or reference-answer injection.
+
+### Notes from the prior local environment update
 ### Changed
 - Update the local checkout from ycts-otree/LLM_ASR main at 8464a7f (v1.4.0), retaining the old local branch as a rollback point.
 - Retain the existing G:\Python\Python_Environment\Python310\python.exe startup configuration.
@@ -125,3 +141,15 @@
 - All 86 automated tests passed; pip check reports no dependency conflicts. Real Qt sample import loaded ASR/Qwen, applied punctuation, dropped no segments and exported matching UI/TXT/SQLite content.
 - The existing offscreen window-size assertion still fails; GUI sizing verification remains incomplete.
 - User MP3, model weights, recordings and transcripts were preserved. No remote push was performed.
+
+
+## v1.4.2 - 2026-09-29
+
+### Changed
+- Merge online main at 6915651 (upstream v1.4.1), including explicit model loading and audited FP32 recovery for failed FP16 ASR.
+- Preserve the existing G-drive Python launcher and prior local update records.
+
+### Notes
+- All 92 automated tests passed; pip check found no dependency conflicts. Actual Qt sample import loaded both models, produced punctuation, recorded zero ASR failures/drops and matched UI/TXT/SQLite.
+- The offscreen window-size assertion remains unresolved; the full GUI verifier does not pass.
+- User MP3 and other untracked files were preserved. No online push or dependency installation was performed.

@@ -70,6 +70,8 @@ class ASREvidence:
     requested_nbest: int = 1
     timestamp_warning: str | None = None
     pause_after_ms: float | None = None
+    inference_precision: str | None = None
+    fallback_reason: str | None = None
 
     @property
     def global_timestamps(self):

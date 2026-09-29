@@ -43,6 +43,7 @@ def main():
         session=window.session
         try:
             requests=[e['data'] for e in session.store.events() if e['type']=='LLM_REQUEST']
+            failed=[e for e in session.store.events() if e['type']=='ASR_FAILED']
             final=session.store.canonical_text
             result.update(source_unchanged=before==hashlib.sha256(source.read_bytes()).hexdigest(),
                 segments=len(session.store.segments),text=final,
@@ -52,6 +53,8 @@ def main():
                 mode=next(e['data']['mode'] for e in session.store.events() if e['type']=='SESSION_START'))
             assert result['source_unchanged'] and result['segments']>0 and result['punctuation_count']>0
             assert result['mode']=='file' and result['ui_matches'] and not result['dropped']
+            result['asr_failed_segments']=len(failed)
+            assert not failed, 'ASR failed a segment; a saved transcript is not complete'
             assert Path(session.store.path).with_suffix('.txt').read_text(encoding='utf-8')==final
             result['branches']=[]
             for branch,member,output in zip([session.store,session.comparison_store],window.local_backend.members,[window.output,window.comparison_output]):
@@ -91,13 +94,13 @@ def main():
         errors.append('Import timed out')
         window.close()
     QTimer.singleShot(600000,timeout)
-    window.show();window.prepare_model()
+    window.show();window.load_button.click()
     with patch('sounddevice.InputStream',side_effect=AssertionError('File import opened microphone')):
         app.exec()
     result.update(passed=not errors,errors=errors,dtype=args.dtype,mode=args.mode,comparison_dtype=args.comparison_dtype)
     result['sessions_completed']=len(completed_sessions)
     Path(f'logs/file_import_{args.mode}.json').write_text(json.dumps(result,ensure_ascii=False,indent=2),encoding='utf-8')
-    print(json.dumps({key:result.get(key) for key in ('passed','errors','segments','punctuation_count','dropped','ui_matches','source_unchanged','database','peak_allocated_mib')},ensure_ascii=True),flush=True)
+    print(json.dumps({key:result.get(key) for key in ('passed','errors','segments','asr_failed_segments','punctuation_count','dropped','ui_matches','source_unchanged','database','peak_allocated_mib')},ensure_ascii=True),flush=True)
     if errors:raise SystemExit(1)
 
 

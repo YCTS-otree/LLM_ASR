@@ -1,5 +1,6 @@
 """Local Paraformer-large inference with explicit device/precision policies."""
 from contextlib import nullcontext
+from dataclasses import replace
 from pathlib import Path
 import os
 import time
@@ -78,10 +79,25 @@ class Engine:
                    if self.precision in ('fp16', 'bf16') else nullcontext())
         # AMP retains FP32 for sensitive operators instead of blindly converting the whole network.
         start = time.perf_counter()
-        with torch.inference_mode(), context:
-            result, hypotheses, warning = self.adapter.generate(segment.audio)
+        fallback_reason = None
+        actual_precision = self.precision
+        try:
+            with torch.inference_mode(), context:
+                result, hypotheses, warning = self.adapter.generate(segment.audio)
+        except IndexError as exc:
+            if self.precision not in ('fp16', 'bf16'):
+                raise
+            # A precision-dependent CIF failure can surface as an IndexError.
+            # Retry the SAME audio and weights
+            # once without autocast; never silently discard that segment.
+            fallback_reason = f'{self.precision}: {type(exc).__name__}: {exc}'
+            logging.getLogger('meeting_asr').warning('ASR retry in FP32 segment=%s reason=%s', segment.segment_id, fallback_reason)
+            with torch.inference_mode(), torch.autocast('cuda', enabled=False):
+                result, hypotheses, warning = self.adapter.generate(segment.audio)
+            actual_precision = 'fp32'
         latency = time.perf_counter() - start
         evidence = make_evidence(segment, result, hypotheses, latency, self.config, warning)
+        evidence = replace(evidence, inference_precision=actual_precision, fallback_reason=fallback_reason)
         logging.getLogger('meeting_asr').info(
             'ASR segment=%s duration=%.3f latency=%.3f beam_size=%d nbest=%d returned=%d timestamp=%s',
             segment.segment_id, segment.duration, latency, self.config.beam_size,
