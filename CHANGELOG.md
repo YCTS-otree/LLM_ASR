@@ -131,3 +131,25 @@
 - Same 60-second sample now covers all four 15-second segments with one audited FP32 recovery and zero ASR failures. Source unchanged; UI, SQLite and TXT match.
 - Against separately supplied edited AI subtitles, character difference rate decreased from 37.73% to 9.76% by recovering missing speech. Current LLM did not further reduce lexical difference. Numeral/product-name formatting also contributes to this metric.
 - Corrected v1.4.0's incomplete functional-test claim in its report. Meeting-quality acceptance is not met; bounded lexical-correction experiment showed no improvement and was not adopted. No model switch or reference-answer injection.
+
+## v1.5.0 - 2026-09-29
+
+### Added
+- Optional DeepSeek HTTPS backend with an in-memory API key dialog, editable model ID, thinking toggle, redacted failures and no automatic network/auth retry.
+- Independent CPU CT-Transformer baseline punctuation from ModelScope, available with LLM disabled or rejected; raw ASR remains immutable.
+- Optional Qwen thinking mode and explicit distinction between lexical changes and punctuation/format-only patches.
+
+### Changed
+- New evidence revisits the complete editable window, including previous completed sentences; default UI window is2048 characters. Overlapping read context and disjoint128-character write targets prevent repeated concatenation.
+- Contextual corrections, numeric/year/terminology normalization no longer require membership in ASR candidates. Full, target-associated candidates are supplied.
+- Increased output/batch budgets for quality-oriented processing; retain revision/frozen/overlap checks and bounded edits. Non-duplicate pure lexical deletion and large rewrites are rejected.
+
+### Fixed
+- English initial capitalization by the punctuation model no longer causes loss of all punctuation in a segment; original lexical characters are preserved.
+- API and thinking parameter changes remain staged until Load model; the small-window GUI was verified after adding controls.
+
+### Notes
+-102 automated tests passed; single/dual/API layouts and API settings were visually checked.
+- Final60-second offline check: four complete segments, no ASR/punctuation failures or queue drops, matching UI/SQLite/TXT and unchanged source. Baseline punctuation23 marks, final25; punctuation count is not accuracy.
+- Reference character difference remains9.76% before and after Qwen. Thinking probe exhausted4096 tokens without a final answer; thinking defaults off. Meeting-quality acceptance remains unmet.
+- DeepSeek transport is mock-tested, not live-tested without a user API key. No fresh0.8B/dual quantization quality run. See BENCHMARK_v1.5.0.md.

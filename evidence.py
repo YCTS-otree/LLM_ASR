@@ -72,6 +72,8 @@ class ASREvidence:
     pause_after_ms: float | None = None
     inference_precision: str | None = None
     fallback_reason: str | None = None
+    punctuated_text: str | None = None
+    punctuation_error: str | None = None
 
     @property
     def global_timestamps(self):

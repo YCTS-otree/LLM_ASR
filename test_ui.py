@@ -145,6 +145,18 @@ class WindowTests(unittest.TestCase):
             session.assert_not_called();loader.assert_not_called()
             self.assertIn('Load model',self.window.state.text())
 
+    def test_deepseek_selection_is_staged_and_does_not_load_qwen(self):
+        self.window.correction_model.setCurrentIndex(self.window.correction_model.findData('deepseek'))
+        self.assertEqual(self.window.local_backend.mode,'2b')
+        self.window.apply_correction_selection()
+        self.assertEqual(self.window.local_backend.mode,'deepseek')
+        self.assertEqual(self.window.local_backend.members[0].source,'ONLINE_LLM')
+        self.assertFalse(self.window.local_backend.ready)
+        self.assertIn('deepseek',self.window.output_title.text())
+        self.assertTrue(self.window.correction_selection_matches())
+        self.window.set_busy(True)
+        self.assertFalse(self.window.api_settings.isEnabled())
+
     def test_layout_at_default_and_smaller_window(self):
         self.window.show()
         for width, height in [(900, 700), (720, 600)]:

@@ -1,9 +1,38 @@
-# Contextual transcript infrastructure with local Qwen — v1.4.0
+# Contextual transcript infrastructure — v1.5.0
+
+## Current behavior (supersedes historical version notes below)
+
+The UI default writable window is 2048 characters. Every new segment revisits
+ALL editable history, including finished sentences. Targets have at most 128
+characters, preferring punctuation/Latin word boundaries. Read spans overlap
+and include all other text in the window; write ownership does not overlap.
+Frozen history remains immutable. Audio still uses maximum 15-second segments;
+text context cannot recover audio missed by ASR.
+
+Contextual lexical corrections and number/year/terminology normalization no
+longer require exact N-best membership; full candidates are retained. Large
+rewrites and non-duplicate pure deletions are rejected. Patch checks retain
+revision/frozen/range/overlap checks, with 256 operations, 1024 inserted/removed
+characters per batch, and 128 removed characters per operation. These bounds
+are not proof that the model's proposed words are semantically correct.
+
+An independent CPU CT-Transformer punctuation model seeds current_text; raw ASR
+and evidence.best_text are unchanged. Punctuation failures are audited. Qwen
+optionally enables thinking (4096 output tokens versus 1024 normally), only
+parsing/logging final answers, with a 600-second batch deadline.
+
+DeepSeek uses the same target/patch flow through HTTPS chat completions. Its key
+is memory-only; redirects are blocked; errors expose codes only. No audio,
+raw response or reasoning is logged/sent as additional data. Requests send
+transcript/context/candidates, with 8192 output tokens and a 120-second socket
+timeout. Network/auth failures are not automatically retried. Load model checks
+configuration, not remote authentication. Earlier version notes below describe
+historical candidate-only/short-tail policies, not current behavior.
 
 ## Scope and principles
 
 1. ASR generates evidence; it does not define the final transcript.
-2. LLM may read broader context, but may modify only the configured recent window (default 1024 Unicode characters; 256–4096 selectable).
+2. LLM may read broader context, but may modify only the configured recent window (UI default 2048 Unicode characters; 256–4096 selectable).
 3. Transcript outside the writable window is immutable.
 4. Visual information is contextual evidence only and cannot directly modify transcript.
 5. Every LLM modification must be represented as a validated and reversible patch.
@@ -13,7 +42,7 @@
 
 This version uses the existing offline Paraformer weights, RMS segmentation and
 PyTorch runtime. Qwen3.5-2B and optional 0.8B provide local text correction. No streaming checkpoint,
-neural VAD, second ASR, network inference API, vision model, ONNX or NPU runtime is added.
+neural VAD, second ASR, vision model, ONNX or NPU runtime is added. DeepSeek is optional.
 
 ## Data and concurrency
 
@@ -174,7 +203,7 @@ TXT is atomically exported on normal/error session cleanup and can be regenerate
 with `TranscriptStore(path).export_txt(output_path)`. After a crash, reopen SQLite;
 do not delete its accompanying WAL/SHM files while a session is active.
 
-No network inference traffic is added. Models/logs/audio/databases are
+Network inference occurs only when DeepSeek is selected. Models/logs/audio/databases are
 excluded from Git. Transcript/audit history grows on disk intentionally; rotating
 operational logs are bounded. UI currently rebuilds canonical text on updates;
 very long meetings may eventually need incremental rendering and disk retention

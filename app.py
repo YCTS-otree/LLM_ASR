@@ -8,7 +8,8 @@ from PySide6.QtCore import QThread, Signal, QUrl, Qt
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
     QHBoxLayout, QFormLayout, QLabel, QComboBox, QPushButton, QPlainTextEdit,
-    QLineEdit, QFileDialog, QProgressBar, QMessageBox, QDoubleSpinBox, QSpinBox, QCheckBox)
+    QLineEdit, QFileDialog, QProgressBar, QMessageBox, QDoubleSpinBox, QSpinBox, QCheckBox,
+    QDialog, QDialogButtonBox)
 from engines import ROOT
 from audio_pipeline import Capture
 from file_capture import FileCapture
@@ -116,7 +117,7 @@ class Session(QThread):
                                                 'window_chars': self.window_chars,
                                                 'backend': getattr(branch_backend, 'source', 'MOCK_LLM'),
                                                 'comparison_id': stem if len(backends)==2 else None,
-                                                'correction_model': getattr(getattr(branch_backend, 'config', None), 'model_size', None),
+                                                'correction_model': getattr(branch_backend, 'model_id', None),
                                                 'mode': 'file' if self.input_path else 'microphone',
                                                 'source_file': str(self.input_path) if self.input_path else None})
             self.saved.emit(' | '.join(str(s.path) for s in stores))
@@ -158,6 +159,8 @@ class Session(QThread):
                 if evidence.fallback_reason:
                     record_event('ASR_PRECISION_FALLBACK',dict(segment_id=evidence.segment_id,
                         reason=evidence.fallback_reason,actual_precision=evidence.inference_precision))
+                if evidence.punctuation_error:
+                    record_event('PUNCTUATION_FAILED',dict(segment_id=evidence.segment_id,error=evidence.punctuation_error))
                 if self.input_path:
                     # Offline throughput may wait; microphone ASR never waits
                     # for LLM. Avoid freezing unprocessed text during fast import.
@@ -221,6 +224,8 @@ class Window(QMainWindow):
             self.llm_config_error = str(exc)
             llm_config = LocalLLMConfig()
         self.base_llm_config = llm_config
+        from deepseek_backend import DeepSeekConfig
+        self.deepseek_config = DeepSeekConfig()
         self.local_backend = CorrectionModels(llm_config, self.llm_state_changed.emit)
         self.closing = False
         self.setWindowTitle(f'本地语音转写 · FunASR Paraformer-large · v{__version__}')
@@ -232,8 +237,9 @@ class Window(QMainWindow):
         title = QLabel('本地语音转写')
         title.setStyleSheet('font-size: 26px; font-weight: 700;')
         layout.addWidget(title)
-        layout.addWidget(QLabel('麦克风 / 录音文件 → Paraformer → 本地上下文纠错 → 版本化转录'))
+        layout.addWidget(QLabel('录音 → Paraformer + 基础标点 → 上下文校对 → 版本化转录'))
         form = QFormLayout()
+        form.setVerticalSpacing(3)
         self.model = QComboBox()
         self.model.addItem('达摩 Paraformer-large · 220M · 中文（ModelScope 国内源）')
         form.addRow('识别模型', self.model)
@@ -269,7 +275,7 @@ class Window(QMainWindow):
         outrow.addWidget(self.browse)
         form.addRow('转录保存目录', outrow)
         self.correction_model = QComboBox()
-        for label, value in [('Qwen3.5-2B', '2b'), ('Qwen3.5-0.8B', '0.8b'), ('2B / 0.8B 双模型对比', 'both')]:
+        for label, value in [('Qwen3.5-2B', '2b'), ('Qwen3.5-0.8B', '0.8b'), ('2B / 0.8B 双模型对比', 'both'), ('DeepSeek 在线 API','deepseek')]:
             self.correction_model.addItem(label, value)
         self.correction_model.setCurrentIndex(self.correction_model.findData(llm_config.model_size))
         self.llm_precision = QComboBox()
@@ -290,14 +296,23 @@ class Window(QMainWindow):
         model_row.addWidget(self.comparison_precision_label)
         model_row.addWidget(self.comparison_precision)
         form.addRow('纠错模型', model_row)
+        self.thinking = QCheckBox('Qwen 思考')
+        self.thinking.setToolTip('启用后允许模型先推理再校对，速度较慢；需点击 Load model 应用。')
+        self.thinking.toggled.connect(self.models_pending)
+        self.api_settings = QPushButton('DeepSeek 设置')
+        self.api_settings.clicked.connect(self.edit_api_settings)
+        self.proofreading_options = QHBoxLayout()
+        self.proofreading_options.addWidget(self.thinking)
+        self.proofreading_options.addWidget(self.api_settings)
         self.writable_window = QSpinBox()
         self.writable_window.setRange(256, 4096)
         self.writable_window.setSingleStep(256)
-        self.writable_window.setValue(1024)
+        self.writable_window.setValue(2048)
         self.writable_window.setSuffix(' 字')
         self.writable_window.setToolTip('最近允许回改的 Unicode 字符数，可设为2048。新会话生效；已冻结历史不会解冻。扩大窗口不代表每次重写整段。')
-        form.addRow('可修改窗口', self.writable_window)
-        self.enable_correction = QCheckBox('启用本地纠错')
+        self.proofreading_options.insertWidget(0,self.writable_window)
+        form.addRow('回改窗口 / 校对', self.proofreading_options)
+        self.enable_correction = QCheckBox('启用上下文校对')
         self.enable_correction.setToolTip('实验功能：可能漏改或误改。原始识别和修改历史始终保留在会话数据库。')
         self.enable_correction.setChecked(True)
         self.enable_correction.toggled.connect(self.toggle_correction)
@@ -313,7 +328,7 @@ class Window(QMainWindow):
         self.logs_button = QPushButton('日志')
         self.logs_button.clicked.connect(lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(str(ROOT / 'logs'))))
         local_row.addWidget(self.logs_button)
-        form.addRow('Local LLM', local_row)
+        form.addRow('LLM', local_row)
         layout.addLayout(form)
         self.meter = QProgressBar()
         self.meter.setRange(0, 100)
@@ -422,15 +437,50 @@ class Window(QMainWindow):
         self._selection_mode = mode
         self.comparison_precision_label.setVisible(mode == 'both')
         self.comparison_precision.setVisible(mode == 'both')
+        self.thinking.setEnabled(mode != 'deepseek')
+        self.llm_precision.setEnabled(mode != 'deepseek')
         self.models_pending()
 
     def models_pending(self, _value=None):
         self.state.setText('参数已选择 · 点击 Load model 应用；不会自动加载。')
 
+    def edit_api_settings(self):
+        dialog=QDialog(self)
+        dialog.setWindowTitle('DeepSeek API')
+        layout=QFormLayout(dialog)
+        note=QLabel('启用后向 api.deepseek.com 发送转录文字、候选和上下文，不上传音频。\nAPI 按服务商规则计费；密钥仅在本次运行内保存。')
+        note.setWordWrap(True)
+        layout.addRow(note)
+        model=QComboBox()
+        model.setEditable(True)
+        model.addItems(['deepseek-flash','deepseek-v4-pro'])
+        model.setCurrentText(self.deepseek_config.api_model)
+        key=QLineEdit(self.deepseek_config.api_key)
+        key.setEchoMode(QLineEdit.Password)
+        think=QCheckBox('启用思考')
+        think.setChecked(self.deepseek_config.thinking)
+        layout.addRow('模型 ID',model)
+        layout.addRow('API Key',key)
+        layout.addRow(think)
+        buttons=QDialogButtonBox(QDialogButtonBox.Ok|QDialogButtonBox.Cancel)
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        layout.addRow(buttons)
+        if dialog.exec()==QDialog.Accepted:
+            if model.currentText().strip():
+                self.deepseek_config=replace(self.deepseek_config,api_model=model.currentText().strip(),api_key=key.text().strip(),thinking=think.isChecked())
+                self.models_pending()
+            else:
+                self.state.setText('DeepSeek 模型 ID 不能为空，未修改配置。')
+        key.clear()
+
     def selected_correction_config(self):
         mode = self.correction_model.currentData()
+        if mode == 'deepseek':
+            return self.deepseek_config,mode,self.comparison_precision.currentData()
         size = '2b' if mode == 'both' else mode
         config = replace(self.base_llm_config, model_size=size, dtype=self.llm_precision.currentData(),
+                         thinking=self.thinking.isChecked(),max_new_tokens=4096 if self.thinking.isChecked() else 1024,
                          model_path=self.base_llm_config.model_path if size == self.base_llm_config.model_size else str(MODEL_SPECS[size]['path']))
         return config, mode, self.comparison_precision.currentData()
 
@@ -453,7 +503,7 @@ class Window(QMainWindow):
             self.session = None
         self.output.clear()
         self.comparison_output.clear()
-        self.output_title.setText(f'Qwen3.5-{size.upper()}')
+        self.output_title.setText(config.api_model if mode=='deepseek' else f'Qwen3.5-{size.upper()}')
         self.comparison_title.setVisible(mode == 'both')
         self.comparison_output.setVisible(mode == 'both')
         self.comparison_precision_label.setVisible(mode == 'both')
@@ -485,10 +535,14 @@ class Window(QMainWindow):
                 latest = branch_store.last_event('LLM_REQUEST') if isinstance(branch_store, TranscriptStore) else None
                 latency = latest.get('latency') if latest else None
                 outcome = '' if not latest else ('已应用' if latest['result']=='APPLIED' else ('无修改' if latest['result']=='NO_CHANGE' else '保留原文'))
+                if latest and latest['result']=='APPLIED' and 'lexical_changed' in latest:
+                    outcome='含字词修改' if latest['lexical_changed'] else '仅标点/格式修改'
                 if latest and latest.get('partial_failures'):
                     outcome += f' · {latest["partial_failures"]}处未通过'
+                if latest and latest.get('detail'):
+                    outcome += ' · '+str(latest['detail'])[:80]
                 title.setWordWrap(True)
-                title.setText(f'Qwen3.5-{member.config.model_size.upper()}' +
+                title.setText(getattr(member,'model_id',f'Qwen3.5-{member.config.model_size.upper()}') +
                               (f' · {latency:.2f}s · {outcome}' if latency is not None else ''))
 
     def load_microphones(self, refresh=False):
@@ -531,6 +585,7 @@ class Window(QMainWindow):
 
     def set_busy(self, busy):
         for widget in (self.start, self.import_button, self.model, self.device, self.microphone, self.refresh,
+                       self.thinking,self.api_settings,
                        self.folder, self.browse, self.threshold, self.precision, self.correction_model, self.llm_precision, self.comparison_precision, self.writable_window, self.load_button):
             widget.setEnabled(not busy)
         self.stop.setEnabled(busy)
@@ -538,6 +593,9 @@ class Window(QMainWindow):
             self.correction_model.setEnabled(False)
             self.llm_precision.setEnabled(False)
             self.comparison_precision.setEnabled(False)
+        if self.correction_model.currentData()=='deepseek':
+            self.thinking.setEnabled(False)
+            self.llm_precision.setEnabled(False)
 
     def import_audio(self):
         path, _ = QFileDialog.getOpenFileName(self, '导入录音文件', '',

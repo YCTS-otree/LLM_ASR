@@ -63,9 +63,9 @@ class Patch:
 
 @dataclass(frozen=True)
 class PatchLimits:
-    max_operations: int = 32
-    max_removed_chars: int = 256
-    max_inserted_chars: int = 256
+    max_operations: int = 256
+    max_removed_chars: int = 1024
+    max_inserted_chars: int = 1024
     max_operation_span: int = 128
 
     def __post_init__(self):

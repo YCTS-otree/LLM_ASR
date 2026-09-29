@@ -3,6 +3,7 @@ import logging
 import threading
 import time
 import uuid
+import unicodedata
 from pathlib import Path
 from dataclasses import replace
 from llm_protocol import BackendResult, PROMPT_VERSION, build_messages, translate_output, translate_focused_output, validate_segment_boundary
@@ -15,6 +16,10 @@ log = logging.getLogger('meeting_asr')
 
 class QwenLocalBackend:
     source = 'LOCAL_LLM'
+
+    @property
+    def model_id(self):
+        return MODEL_SPECS[self.config.model_size]['model_id']
 
     def __init__(self, config, status=lambda state: None):
         self.config, self.status = config, status
@@ -84,7 +89,7 @@ class QwenLocalBackend:
                 break
             result=self._process_once(target,deadline)
             attempts=[]
-            if target.focused and (result.error or (result.patch is not None and not result.patch['operations'] and len(target.snapshot.writable_text)>24)):
+            if target.focused and (result.error in ('INVALID_OUTPUT','VALIDATION_REJECTED') or (result.patch is not None and not result.patch['operations'] and len(target.snapshot.writable_text)>24)):
                 # Quality over latency: one conservative punctuation-only retry.
                 # Both attempts use the same immutable snapshot and deadline.
                 attempts.append(dict(result.metadata,result=result.error or 'VALID'))
@@ -112,13 +117,19 @@ class QwenLocalBackend:
                     record.update(result='VALIDATION_REJECTED',detail=exc.code)
             records.append(record)
         metadata=dict(records[0] if records else {},request_id=uuid.uuid4().hex,
-            model_id=MODEL_SPECS[self.config.model_size]['model_id'],prompt_version=PROMPT_VERSION,
+            model_id=self.model_id,prompt_version=PROMPT_VERSION,
             dtype=self.config.dtype,protocol=self.config.protocol,base_revision=s.revision,
             window_start=s.window_start,window_length=len(s.writable_text),started_monotonic=started,
             latency=time.perf_counter()-started,subrequests=records,focus_count=len(targets),
             input_tokens=sum(r.get('input_tokens',0) for r in records),output_tokens=sum(r.get('output_tokens',0) for r in records),
             partial_failures=sum(r['result']!='VALID' for r in records))
         metadata.pop('result',None)
+        revised=s.text
+        for op in sorted(combined['operations'],key=lambda item:(item['start'],item['end']),reverse=True):
+            revised=revised[:op['start']]+op['text']+revised[op['end']:]
+        lexical=lambda text: ''.join(c for c in text if not c.isspace() and not unicodedata.category(c).startswith('P'))
+        metadata['lexical_changed']=lexical(revised)!=lexical(s.text)
+        metadata['attempt_rejections']=sum(a.get('result')!='VALID' for r in records for a in r.get('attempts',[r]))
         if any(r['result']=='VALID' for r in records):
             metadata.pop('detail',None)
         self.last_metadata=metadata
@@ -129,7 +140,7 @@ class QwenLocalBackend:
     def _process_once(self, context, batch_deadline=None):
         started = time.perf_counter()
         final_state = 'Ready'
-        metadata = dict(request_id=uuid.uuid4().hex, model_id=MODEL_SPECS[self.config.model_size]['model_id'], prompt_version=PROMPT_VERSION,
+        metadata = dict(request_id=uuid.uuid4().hex, model_id=self.model_id, prompt_version=PROMPT_VERSION,
                         started_monotonic=started,
                         protocol=self.config.protocol, dtype=self.config.dtype, base_revision=context.snapshot.revision,
                         window_start=context.snapshot.window_start, window_length=len(context.snapshot.writable_text),
@@ -147,8 +158,10 @@ class QwenLocalBackend:
                 if not self.enabled:
                     raise RuntimeError('Local correction disabled')
                 messages = build_messages(context, self.config.protocol)
+                thinking=self.config.thinking and not context.punctuation_only
+                metadata['thinking']=thinking
                 inputs = self.tokenizer.apply_chat_template(messages, tokenize=True, add_generation_prompt=True,
-                            enable_thinking=False, return_tensors='pt', return_dict=True)
+                            enable_thinking=thinking, return_tensors='pt', return_dict=True)
                 metadata['input_tokens'] = inputs['input_ids'].shape[-1]
                 if metadata['input_tokens'] > self.config.max_input_tokens:
                     raise RuntimeError('Input token budget exceeded; transcript preserved')
@@ -176,6 +189,11 @@ class QwenLocalBackend:
                     prefill_latency=(timing.first_token - inference_start if timing.first_token else None),
                     decode_latency=(ended - timing.first_token if timing.first_token else None))
                 raw = self.tokenizer.decode(generated, skip_special_tokens=True)
+                if thinking:
+                    # Only the final answer is parsed or logged, never reasoning.
+                    if '</think>' not in raw:
+                        raise PatchRejected('INCOMPLETE_THINKING')
+                    raw=raw.rsplit('</think>',1)[1].strip()
                 del output, inputs
                 if self.cancel.is_set() or not self.enabled:
                     raise RuntimeError('Correction cancelled')

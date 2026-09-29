@@ -21,7 +21,7 @@ class FocusedTests(unittest.TestCase):
         return CorrectionContext(TranscriptSnapshot(1,text,start,len(text)), ASREvidence('s',0,1,text,end_reason='max_duration'))
 
     def test_partition_covers_target_with_absolute_offsets_and_readonly_context(self):
-        c=self.context('已冻结。'+'现在我们讨论语音转录的准确性'*9,4)
+        c=self.context('已冻结。'+'现在我们讨论语音转录的准确性'*20,4)
         parts=focused_contexts(c)
         self.assertEqual(''.join(p.snapshot.writable_text for p in parts),c.snapshot.writable_text)
         for p in parts:
@@ -32,8 +32,8 @@ class FocusedTests(unittest.TestCase):
         self.assertEqual(parts[-1].evidence.end_reason,'max_duration')
 
     def test_latin_word_does_not_split_when_boundary_available(self):
-        c=self.context('中'*62+'Paraformer模型继续讨论')
-        self.assertEqual(focused_contexts(c)[0].snapshot.window_end,62)
+        c=self.context('中'*(FOCUS_CHARS-2)+'Paraformer模型继续讨论')
+        self.assertEqual(focused_contexts(c)[0].snapshot.window_end,FOCUS_CHARS-2)
 
     def test_compact_output_cannot_copy_context_or_change_revision(self):
         s=self.context('冻结原文没有句号',2).snapshot
@@ -46,12 +46,12 @@ class FocusedTests(unittest.TestCase):
             translate_focused_output(json.dumps(dict(base_revision=2,text=s.writable_text)),s)
 
     def test_combination_keeps_good_target_when_another_fails(self):
-        c=self.context('中'*160)
+        c=self.context('中'*(FOCUS_CHARS*3))
         backend=QwenLocalBackend(LocalLLMConfig())
         backend.ready=True
         def result(target, deadline):
             s=target.snapshot
-            if s.window_start==64:
+            if s.window_start==FOCUS_CHARS:
                 return BackendResult(None,dict(detail='CONTENT_DRIFT'),'INVALID_OUTPUT')
             return BackendResult(translate_focused_output(json.dumps(dict(base_revision=1,text=s.writable_text+'，')),s))
         backend._process_once=Mock(side_effect=result)
