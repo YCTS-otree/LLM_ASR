@@ -40,11 +40,12 @@ class ContextBuilder:
                 boundaries.append(dict(id=segment.segment_id,
                     start=max(offset, snapshot.window_start)-snapshot.window_start,
                     end=end-snapshot.window_start, end_reason=evidence['end_reason'],
-                    pause_after_ms=evidence.get('pause_after_ms')))
+                    pause_after_ms=evidence.get('pause_after_ms'),
+                    best_text=evidence['best_text'],nbest=evidence.get('nbest',[])))
             offset = end
         return CorrectionContext(snapshot, stable.evidence,
                                  readable_context=snapshot.text[max(0, snapshot.window_start - 256):snapshot.window_start],
-                                 segments=tuple(boundaries[-16:]))
+                                 segments=tuple(boundaries))
 
 
 class LLMBackend(Protocol):

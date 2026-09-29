@@ -8,7 +8,7 @@ import unicodedata
 from patches import Patch, PatchRejected, PatchValidator
 from difflib import SequenceMatcher
 
-PROMPT_VERSION = 'qwen_asr_correction_v7'
+PROMPT_VERSION = 'context_proofreading_v8'
 
 
 @dataclass(frozen=True)
@@ -180,13 +180,16 @@ def build_focused_messages(context):
     payload=dict(base_revision=s.revision,left_context=context.readable_context,
         right_context=context.readable_right,
         end_reason=context.evidence.end_reason,
-        nbest=[h.text for h in context.evidence.nbest if len(h.text)<=96],
+        nbest=([h['text'] for item in context.segments for h in item.get('nbest',[])]
+               if context.segments else [h.text for h in context.evidence.nbest]),
         target=s.writable_text)
     instruction=('目标后面还有只读后文；结合它判断句中停顿，目标结束本身不是句末。' if context.readable_right else
                  ('这是硬切，目标末尾不要加句末标点。' if context.evidence.end_reason=='max_duration' else '完整陈述补句号，问句补问号。'))
-    return [dict(role='system',content=system+'\n本次使用target代替writable_window。只返回JSON：{"base_revision":整数,"text":"target补全标点后的文字"}。仅复制target并加标点，left_context/right_context/nbest均只读，绝不能复制到text。目标最多64字，可能半句话；即使上下文很长也不能输出整句。务必保留所有原词和重复，不能删除。无需输出原文、操作或解释。'),
+    return [dict(role='system',content=system+'\n本次使用target代替writable_window。只返回JSON：{"base_revision":整数,"text":"校对后的target"}。结合全部left_context/right_context校对target，包括根据后文回改前文、纠正同音错词、规范年份数字和明确术语。N-best只是参考，不是允许修改的词表；正确词不在候选中也可以改。target可能是半句话，只输出它对应的内容，绝不能复制只读前后文。不要总结、补充事实或凭空猜测不确定的专名。'),
         dict(role='user',content='{"base_revision":8,"target":"天已经黑了我们明天再来","right_context":"","end_reason":"silence"}'),
         dict(role='assistant',content='{"base_revision":8,"text":"天已经黑了，我们明天再来。"}'),
+        dict(role='user',content='{"base_revision":9,"target":"我们在二〇二四年启动德尔塔项目。","right_context":"这个项目的英文名称是Delta。","end_reason":"context_slice","nbest":[]}'),
+        dict(role='assistant',content='{"base_revision":9,"text":"我们在2024年启动Delta项目。"}'),
         dict(role='user',content=json.dumps(payload,ensure_ascii=False)+'\n'+instruction+'只返回当前target的结果。')]
 
 
@@ -196,14 +199,25 @@ def translate_focused_output(raw,snapshot,evidence=None):
         raise PatchRejected('INVALID_OUTPUT')
     original=snapshot.writable_text
     # A short target must not become a rewritten sentence or copied context.
-    # Punctuation is free. Lexical edits additionally require an exact alternate
-    # ASR candidate span; omissions, copied context and unsupported rewrites fail.
+    # Punctuation is free; lexical edits are allowed within bounded local spans.
     spoken=lambda text: ''.join(c for c in text if not unicodedata.category(c).startswith('P') and not c.isspace())
     a,b=spoken(original),spoken(data['text'])
-    changes=[(j-i,l-k) for tag,i,j,k,l in SequenceMatcher(None,a,b,autojunk=False).get_opcodes() if tag!='equal']
-    supported = (evidence is not None and a not in b and b not in a and
-                 any(h.rank>1 and b in spoken(h.text) for h in evidence.nbest))
-    if a!=b and (not supported or sum(max(x,y) for x,y in changes)>4):
+    differences=[(tag,i,j,k,l) for tag,i,j,k,l in SequenceMatcher(None,a,b,autojunk=False).get_opcodes() if tag!='equal']
+    changes=[(j-i,l-k) for tag,i,j,k,l in differences]
+    for tag,i,j,k,l in differences:
+        # A proofreading pass must not silently omit a phrase. Allow deletion
+        # only for an immediately repeated span (a common ASR duplication).
+        if tag=='delete':
+            removed=a[i:j]
+            if not (a[:i].endswith(removed) or a[j:].startswith(removed)):
+                raise PatchRejected('CONTENT_DRIFT')
+        if tag in ('replace','insert') and max(j-i,l-k)>12:
+            raise PatchRejected('CONTENT_DRIFT')
+    # Contextual corrections need not occur in N-best. Retain a coarse anti-
+    # rewrite guard; punctuation-only recovery still cannot change vocabulary.
+    changed=sum(max(x,y) for x,y in changes)
+    if a!=b and (evidence is None or changed>max(8,int(len(a)*.40)) or
+                 len(b)>len(a)+max(8,int(len(a)*.25)) or len(b)<len(a)*.65):
         raise PatchRejected('CONTENT_DRIFT')
     return translate_output(json.dumps(dict(base_revision=data['base_revision'],operations=[
         dict(op='replace' if data['text'] else 'delete',old_text=original,new_text=data['text'])])),snapshot,'anchored')

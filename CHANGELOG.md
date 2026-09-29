@@ -132,6 +132,42 @@
 - Against separately supplied edited AI subtitles, character difference rate decreased from 37.73% to 9.76% by recovering missing speech. Current LLM did not further reduce lexical difference. Numeral/product-name formatting also contributes to this metric.
 - Corrected v1.4.0's incomplete functional-test claim in its report. Meeting-quality acceptance is not met; bounded lexical-correction experiment showed no improvement and was not adopted. No model switch or reference-answer injection.
 
+## v1.5.0 - 2026-09-29
+
+### Added
+- Optional DeepSeek HTTPS backend with an in-memory API key dialog, editable model ID, thinking toggle, redacted failures and no automatic network/auth retry.
+- Independent CPU CT-Transformer baseline punctuation from ModelScope, available with LLM disabled or rejected; raw ASR remains immutable.
+- Optional Qwen thinking mode and explicit distinction between lexical changes and punctuation/format-only patches.
+
+### Changed
+- New evidence revisits the complete editable window, including previous completed sentences; default UI window is2048 characters. Overlapping read context and disjoint128-character write targets prevent repeated concatenation.
+- Contextual corrections, numeric/year/terminology normalization no longer require membership in ASR candidates. Full, target-associated candidates are supplied.
+- Increased output/batch budgets for quality-oriented processing; retain revision/frozen/overlap checks and bounded edits. Non-duplicate pure lexical deletion and large rewrites are rejected.
+
+### Fixed
+- English initial capitalization by the punctuation model no longer causes loss of all punctuation in a segment; original lexical characters are preserved.
+- API and thinking parameter changes remain staged until Load model; the small-window GUI was verified after adding controls.
+
+### Notes
+-102 automated tests passed; single/dual/API layouts and API settings were visually checked.
+- Final60-second offline check: four complete segments, no ASR/punctuation failures or queue drops, matching UI/SQLite/TXT and unchanged source. Baseline punctuation23 marks, final25; punctuation count is not accuracy.
+- Reference character difference remains9.76% before and after Qwen. Thinking probe exhausted4096 tokens without a final answer; thinking defaults off. Meeting-quality acceptance remains unmet.
+- DeepSeek transport is mock-tested, not live-tested without a user API key. No fresh0.8B/dual quantization quality run. See BENCHMARK_v1.5.0.md.
+
+## v1.5.1 - 2026-09-29
+
+### Added
+- Blank DeepSeek key input now loads DEEPSEEK.key from the current process working directory on explicit Load model. Accepts UTF-8 BOM and surrounding whitespace; manual input takes precedence.
+
+### Fixed
+- Clicking Load model rereads API credentials even when already configured; failed reload clears the previous credential and readiness.
+- Missing, malformed or oversized key files produce content-free errors. The application never creates/rewrites the file or displays its contents; existing *.key Git exclusion remains in effect.
+
+### Notes
+-107 tests passed using temporary dummy credentials only. API settings GUI inspected. No real key was read and no live API request was made.
+
+## Prior local integration records
+
 ### Notes from the prior local environment update
 ### Changed
 - Update the local checkout from ycts-otree/LLM_ASR main at 8464a7f (v1.4.0), retaining the old local branch as a rollback point.
@@ -153,3 +189,14 @@
 - All 92 automated tests passed; pip check found no dependency conflicts. Actual Qt sample import loaded both models, produced punctuation, recorded zero ASR failures/drops and matched UI/TXT/SQLite.
 - The offscreen window-size assertion remains unresolved; the full GUI verifier does not pass.
 - User MP3 and other untracked files were preserved. No online push or dependency installation was performed.
+
+## v1.5.2 - 2026-09-29
+
+### Changed
+- Merge PR #1 latest head d2c3b1a into the local usage branch; preserve the existing G-drive Python launcher and prior local integration records.
+- Download the newly required CPU punctuation model from domestic ModelScope.
+
+### Notes
+- All 107 automated tests passed; pip check found no dependency conflicts. Real local Qt sample import loaded ASR/punctuation/Qwen, recorded zero ASR failures or drops, and matched UI/TXT/SQLite.
+- The existing offscreen window-size assertion still fails; complete GUI verification remains unresolved. Live DeepSeek API and transcription quality are not validated by these checks.
+- PR #1 was marked ready and merged into online main at b341a77 at the user's request. User MP3 and other untracked files were preserved.

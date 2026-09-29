@@ -9,6 +9,13 @@ class CorrectionModels:
 
     def __init__(self, config, status=lambda state: None, mode=None, comparison_dtype=None):
         self.mode = mode or config.model_size
+        if self.mode == 'deepseek':
+            from deepseek_backend import DeepSeekBackend
+            self.status = status
+            self.members = (DeepSeekBackend(config,status),)
+            self.config = config
+            self.cancel = _CancelAll(self)
+            return
         sizes = ('2b', '0.8b') if self.mode == 'both' else (self.mode,)
         self.states = {size: 'Loading' for size in sizes}
         self.status = status
@@ -46,7 +53,7 @@ class CorrectionModels:
             try:
                 member.load()
             except Exception as exc:
-                errors.append(f'{member.config.model_size}: {exc}')
+                errors.append(f'{self.mode if self.mode=="deepseek" else member.config.model_size}: {exc}')
         if errors:
             raise RuntimeError('; '.join(errors))
 

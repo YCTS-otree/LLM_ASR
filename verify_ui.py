@@ -2,7 +2,8 @@
 import os
 from pathlib import Path
 os.environ['QT_QPA_PLATFORM'] = 'offscreen'
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QDialog
+from PySide6.QtCore import QTimer
 from PySide6.QtGui import QFont, QFontDatabase
 from unittest.mock import Mock, patch
 from app import Window
@@ -62,6 +63,18 @@ def main():
         assert window.output.geometry().right()<window.comparison_output.geometry().left()
         window.grab().save(str(ROOT/'logs'/f'ui_dual_{width}.png'))
     window.session=None
+    window.correction_model.setCurrentIndex(window.correction_model.findData('deepseek'))
+    window.apply_correction_selection()
+    window.resize(720,600)
+    application.processEvents()
+    window.grab().save(str(ROOT/'logs/ui_deepseek_720.png'))
+    def capture_api_dialog():
+        for dialog in application.topLevelWidgets():
+            if isinstance(dialog,QDialog) and dialog.isVisible():
+                dialog.grab().save(str(ROOT/'logs/ui_deepseek_settings.png'))
+                dialog.reject()
+    QTimer.singleShot(100,capture_api_dialog)
+    window.edit_api_settings()
     window.close()
     store.close()
     print('Patched transcript UI rendered at 900x700 and 720x600.')

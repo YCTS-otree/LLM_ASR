@@ -2,11 +2,11 @@
 
 本地会议转录工具：**FunASR Paraformer-large + Qwen3.5 上下文纠错与标点恢复**。支持麦克风持续录音、录音文件离线转录、2B / 0.8B 双模型对比，以及可追溯的原始识别和修改历史。
 
-**版本：1.4.2 · 源代码许可：[GPL-3.0-only](LICENSE)**
+**版本：1.5.2 · 源代码许可：[GPL-3.0-only](LICENSE)**
 
 这是实验性桌面应用。优先忠实保留讲话内容；模型仍可能漏标点、误断句或误改词，需要人工校对。当前使用离线 Paraformer 按声音停顿分段，不是 FunASR streaming 模型，没有说话人分离，也不保证实时响应。
 
-**质量状态：尚未达到会议转录验收标准。** 专业口播的独立参考对比发现首段 FP16 失败和未纠正的错词；v1.4.1 恢复了失败首段，但当前 LLM 在该样本没有降低字词差异率。具体测量与 v1.4.0 测试遗漏见 [质量报告](BENCHMARK_v1.4.1.md)。
+**质量状态：尚未达到会议转录验收标准。** v1.5.0增加上下文回改、独立标点和在线API，但允许改词不等于改词正确。真实样本与限制见 [质量报告](BENCHMARK_v1.5.0.md)；历史漏首段问题见 [v1.4.1报告](BENCHMARK_v1.4.1.md)。
 
 ## 功能
 
@@ -14,12 +14,18 @@
 - 参数调整完成后点击 **Load model** 统一加载。启动、修改参数、重新勾选纠错均不自动加载；相同配置可复用常驻模型。
 - 单独选择 Qwen3.5-2B 或 Qwen3.5-0.8B，支持 BF16、FP16、可选 INT4/NF4。
 - 双模型并发：一次 ASR、两份独立上下文和转录结果，两栏显示并分别保存。
-- 可修改窗口 **256–4096 个 Unicode 字符**，默认 1024，可以直接设为 **2048**。会话开始前设置，已冻结历史不解冻。
-- 长文本按最多 64 字的目标纠错，结合只读前后文；输出无效或长目标未修改时，追加一次保守的标点检查。默认每次生成最多 192 tokens、整批纠错最多 90 秒，超时在生成步骤间检查。
-- SQLite 保存不可变 ASR、N-best、修订、拒绝原因及原始音频位置；停止或文件结束时导出 UTF-8 TXT。
-- 模型从国内 ModelScope 显式下载；正常转录仅使用本地模型，不调用在线 LLM。
+- 可修改窗口 **256–4096 个 Unicode 字符**，默认 **2048**。新内容到来后重新校对整个窗口，包括已结束的旧句；已冻结历史不解冻。
+- 每个写入目标最多128字，优先沿已有标点或英文单词边界划分，读取整个窗口的前后文。读上下文重叠、写入范围不重叠，不重复拼接文字。
+- 允许上下文支持的同音纠错、数字/年份/术语规范化，不要求正确词出现在 N-best 中。基础 CT-Transformer 标点独立运行，关闭或拒绝 LLM 时仍保留基础标点。
+- Qwen 思考模式可选；普通生成最多1024 tokens，思考模式4096 tokens，整批最多600秒。推理过程不进入转录或日志。
 
-修改窗口是**允许修改的范围**，不代表每次重写整个窗口。当前优先处理新片段和前一段尚未结束的短尾部，周围上下文只读。扩大窗口不会自动修复已经结束的旧会话，也不保证纠错更准。
+Qwen思考模式默认关闭：本机测试出现4096 tokens内仍未结束思考的情况，增加等待时间不保证更准。官方模型卡也说明2B可能发生思考循环，见[Qwen3.5-2B模型卡](https://huggingface.co/Qwen/Qwen3.5-2B)。未完成的输出不会写入转录。
+
+- 可选 **DeepSeek 在线 API**，支持模型 ID 和思考开关；无需安装 OpenAI SDK。
+- SQLite 保存不可变 ASR、N-best、修订、拒绝原因及原始音频位置；停止或文件结束时导出 UTF-8 TXT。
+- 模型从国内 ModelScope 显式下载；选择本地 Qwen 时不调用在线 LLM。
+
+修改窗口内的旧句可结合后文回改，例如后文明确英文拼写后再修正前文。原始 ASR 和每次修订保留。扩大窗口不会自动修复已经结束的旧会话，也不保证纠错更准。音频仍采用最长15秒分段；文本重叠上下文不能恢复已经漏识别的声音。
 
 ## 系统与硬件要求
 
@@ -85,7 +91,7 @@ $pythonExe = ".\.venv\Scripts\python.exe"
 & $pythonExe app.py
 ```
 
-只使用 2B 时不用下载 0.8B，反之亦然。仅 ASR 可只安装 `requirements.txt`、下载 Paraformer，并在界面关闭本地纠错；CPU 需选择 FP32 或 INT8。Qwen 缺失时会提示错误，ASR 功能仍可用。
+只使用 2B 时不用下载 0.8B，反之亦然。仅 ASR 或 DeepSeek 可只安装 `requirements.txt`、下载 Paraformer 与基础标点，并关闭本地 Qwen；CPU 需选择 FP32 或 INT8。基础标点约292MiB，使用CPU。已有 Paraformer 的用户可执行 `python download_models.py --punctuation-only`，只下载新增标点权重。
 
 `start.bat` 优先使用项目 `.venv`，其次使用当前用户的标准 Python310 安装路径，最后使用 PATH 中的 `python`。其他自定义环境请用该环境的 `python app.py` 启动。
 
@@ -107,6 +113,12 @@ Qwen 下载脚本校验固定 SHA256，模型标识和对应官方 revision 在 
 
 ## 数据保存与隐私
 
+使用 DeepSeek：选择「DeepSeek 在线 API」→「DeepSeek 设置」→填写服务商 API Key 和模型 ID→点击 Load model→导入或录音。当前官方文档列出的模型 ID 为 `deepseek-flash`、`deepseek-v4-pro`，界面允许自定义，以[官方接口文档](https://api-docs.deepseek.com/api/create-chat-completion/)为准。思考默认开启。Load model仅检查本地配置，真实鉴权在首次请求进行；HTTP失败显示在会话事件中，不自动重试计费请求。
+
+在线模式发送转录文本、识别候选和上下文，**不上传音频文件**。密钥输入框留空时，点击 **Load model** 会读取当前运行目录（进程工作目录）下的 `DEEPSEEK.key`，内容为单个UTF-8密钥文本，允许BOM和首尾空白。文件不存在时提示错误，不会自动创建。修改文件后再次点击按钮会重新读取。使用 `start.bat` 时工作目录就是该脚本所在目录；从终端启动则使用终端当前目录。手动输入的密钥优先于文件。
+
+程序只在内存中使用密钥，不回写文件、不写入日志或SQLite，也不回填文件密钥到界面。用户自行创建的密钥文件由用户管理，`*.key` 已被Git忽略。请求固定使用 `https://api.deepseek.com/chat/completions`，拒绝重定向。API计费与数据处理遵循服务商条款。未提供密钥时仅验证了模拟响应，未完成真实在线服务验收。
+
 | 目录 | 内容 |
 |---|---|
 | `models/` | 下载的模型权重、配置、缓存 |
@@ -114,7 +126,7 @@ Qwen 下载脚本校验固定 SHA256，模型标识和对应官方 revision 在 
 | `transcripts/` | SQLite、TXT、离线回放结果 |
 | `logs/` | 轮转日志和本地验证输出 |
 
-这些目录均由 `.gitignore` 排除。错误日志可能包含本地路径，启用 debug 日志会记录提示词和模型输出；请勿直接公开真实录音、会话数据库或日志。项目没有在线 LLM 接口，模型下载与依赖安装需要联网，运行时使用本地文件。
+这些目录均由 `.gitignore` 排除。错误日志可能包含本地路径，本地Qwen的 debug 日志会记录提示词和最终答案；请勿公开真实录音、会话数据库或日志。DeepSeek不记录请求正文、原始响应或推理内容。模型下载与依赖安装需要联网；本地模式推理使用本地文件。
 
 ## 验证与开发
 
@@ -126,9 +138,9 @@ Qwen 下载脚本校验固定 SHA256，模型标识和对应官方 revision 在 
 & $pythonExe replay_evidence.py transcripts\your_session.sqlite3 --window-chars 2048
 ```
 
-短目标输出会转为精确 Patch，再检查修订号、冻结区、操作数量/跨度和重叠。标点外的大段复制、删词、无证据改写会被拒绝；失败保留原文。模型仍可选择错误标点，验证器不是语义正确性的证明。
+短目标输出会转为精确 Patch，再检查修订号、冻结区、操作数量/跨度和重叠。大段复制、非重复内容的纯删除会被拒绝；允许有界的上下文替换。失败保留当前文本和基础标点。规则不能证明改词语义正确，仍需人工复核。
 
-参见 [架构](ARCHITECTURE.md)、[本版回归记录](BENCHMARK_v1.4.1.md)、[更新记录](CHANGELOG.md)。旧报告描述各自版本的实验条件，不能视为当前版在任意音频上的准确率。
+参见 [架构](ARCHITECTURE.md)、[本版回归记录](BENCHMARK_v1.5.0.md)、[更新记录](CHANGELOG.md)。旧报告描述各自版本的实验条件，不能视为当前版在任意音频上的准确率。
 
 ## 许可与第三方组件
 
@@ -136,6 +148,7 @@ Qwen 下载脚本校验固定 SHA256，模型标识和对应官方 revision 在 
 
 - [FunASR](https://github.com/modelscope/FunASR) 与 [Paraformer 模型页](https://modelscope.cn/models/iic/speech_paraformer-large_asr_nat-zh-cn-16k-common-vocab8404-pytorch)。请分别查看代码许可和模型使用条件。
 - [Qwen3.5-2B](https://huggingface.co/Qwen/Qwen3.5-2B) / [Qwen3.5-0.8B](https://huggingface.co/Qwen/Qwen3.5-0.8B)：官方模型卡标示 Apache-2.0。
+- [CT-Transformer基础标点模型](https://modelscope.cn/models/iic/punc_ct-transformer_zh-cn-common-vocab272727-pytorch/)：ModelScope模型页标示Apache-2.0，权重不随源码分发。
 - [PySide6 / Qt for Python](https://doc.qt.io/qtforpython-6/licenses.html) 及其他安装依赖的许可由各项目提供；再分发打包程序时需同时保留相应许可和通知。
 
 本机使用现有 Python：`G:\Python\Python_Environment\Python310\python.exe`，`start.bat` 已固定到该环境。

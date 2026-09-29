@@ -136,7 +136,7 @@ class TranscriptTests(unittest.TestCase):
     def test_size_guard(self):
         add(self.store, 'a' * 500)
         self.rejected('SIZE_GUARD', op('delete', 0, 129))
-        self.rejected('SIZE_GUARD', op('insert', 0, 0, 'b' * 257))
+        self.rejected('SIZE_GUARD', op('insert', 0, 0, 'b' * 1025))
 
     def test_invalid_operation_shapes(self):
         add(self.store, 'abcd')

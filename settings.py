@@ -24,11 +24,12 @@ class LocalLLMConfig:
     model_path: str = ''
     dtype: str = 'bf16'
     protocol: str = 'anchored'
-    max_new_tokens: int = 192
-    max_input_tokens: int = 4096
-    timeout_seconds: float = 90.0
+    max_new_tokens: int = 1024
+    max_input_tokens: int = 8192
+    timeout_seconds: float = 600.0
     debounce_seconds: float = 0.35
     model_size: str = '2b'
+    thinking: bool = False
 
     def __post_init__(self):
         from qwen_spec import MODEL_SPECS
@@ -36,9 +37,9 @@ class LocalLLMConfig:
             raise ValueError('Invalid Qwen model size')
         if self.dtype not in ('bf16', 'fp16', 'int4') or self.protocol not in ('relative', 'anchored'):
             raise ValueError('Invalid Qwen dtype/protocol')
-        if not 16 <= self.max_new_tokens <= 192 or not 512 <= self.max_input_tokens <= 8192:
+        if not 16 <= self.max_new_tokens <= 8192 or not 512 <= self.max_input_tokens <= 16384:
             raise ValueError('Unsafe token limit')
-        if not 1 <= self.timeout_seconds <= 120 or not 0 <= self.debounce_seconds <= 2:
+        if not 1 <= self.timeout_seconds <= 1800 or not 0 <= self.debounce_seconds <= 2:
             raise ValueError('Invalid time limit')
 
     @classmethod
