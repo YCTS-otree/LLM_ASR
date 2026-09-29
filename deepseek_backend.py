@@ -20,9 +20,21 @@ class DeepSeekConfig(LocalLLMConfig):
     api_key_file: str = 'DEEPSEEK.key'
     thinking: bool = True
     max_new_tokens: int = 8192
+    target_chars: int = 512
+    retry_unchanged: bool = False
+    reasoning_effort: str = 'high'
+    output_token_limit: int = 8192
+    request_timeout: float = 180.0
+    temperature: float = 0.0
 
     def __post_init__(self):
         super().__post_init__()
+        if self.reasoning_effort not in ('low','high','max'):
+            raise ValueError('Invalid reasoning effort')
+        if type(self.output_token_limit) is not int or not 256 <= self.output_token_limit <= 32768:
+            raise ValueError('Invalid output token limit')
+        if not 5 <= self.request_timeout <= 600 or not 0 <= self.temperature <= 2:
+            raise ValueError('Invalid API generation settings')
         if not self.api_model.strip() or len(self.api_model)>128:
             raise ValueError('Invalid DeepSeek model ID')
 
@@ -70,15 +82,22 @@ class DeepSeekBackend(QwenLocalBackend):
         start=time.perf_counter()
         metadata=dict(request_id=uuid.uuid4().hex, model_id=self.model_id,
             prompt_version=PROMPT_VERSION, base_revision=context.snapshot.revision,
+            punctuation_strategy=context.punctuation_mode,
             started_monotonic=start, input_tokens=0, output_tokens=0)
         try:
             if not self.ready or not self.enabled or self.cancel.is_set():
                 raise RuntimeError('API_DISABLED')
-            timeout=min(120, self.config.timeout_seconds, (batch_deadline or start+120)-start)
+            timeout=min(self.config.request_timeout, self.config.timeout_seconds, (batch_deadline or start+self.config.request_timeout)-start)
             if timeout<=0:raise TimeoutError()
             payload=dict(model=self.model_id,messages=build_messages(context,self.config.protocol),
-                         stream=False,max_tokens=self.config.max_new_tokens,
+                         stream=False,max_tokens=self.config.output_token_limit,
                          thinking=dict(type='enabled' if self.config.thinking else 'disabled'))
+            if self.config.thinking:
+                payload['reasoning_effort']=self.config.reasoning_effort
+            else:
+                payload['temperature']=self.config.temperature
+            metadata.update(reasoning_effort=self.config.reasoning_effort if self.config.thinking else 'disabled',
+                max_tokens=self.config.output_token_limit,target_chars=self.config.target_chars,request_timeout=timeout)
             request=urllib.request.Request('https://api.deepseek.com/chat/completions',
                 data=json.dumps(payload,ensure_ascii=False).encode('utf-8'),
                 headers={'Authorization':'Bearer '+self._api_key,'Content-Type':'application/json'},method='POST')
@@ -104,10 +123,15 @@ class DeepSeekBackend(QwenLocalBackend):
             # Some models wrap their final JSON in a Markdown fence.
             if isinstance(content,str) and content.strip().startswith('```json') and content.strip().endswith('```'):
                 content=content.strip()[7:-3].strip()
-            patch=translate_focused_output(content,context.snapshot,None if context.punctuation_only else context.evidence)
+            patch=translate_focused_output(content,context.snapshot,None if context.punctuation_only else context.evidence,normalize_numbers=True)
+            from llm_protocol import strict_json
+            from number_formatting import normalize_written_numbers
+            model_text=strict_json(content)['text']
+            metadata['written_number_normalization']=model_text!=normalize_written_numbers(model_text)
             validate_segment_boundary(patch,context)
             usage=data.get('usage',{})
             metadata.update(input_tokens=usage.get('prompt_tokens',0),output_tokens=usage.get('completion_tokens',0))
+            metadata['reasoning_tokens']=usage.get('completion_tokens_details',{}).get('reasoning_tokens',0)
             return BackendResult(patch,dict(metadata,latency=time.perf_counter()-start))
         except Exception as exc:
             # Never include str(exc), HTTP bodies, request headers or API keys.

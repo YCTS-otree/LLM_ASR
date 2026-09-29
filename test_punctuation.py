@@ -86,18 +86,15 @@ class MinimalPunctuationTests(unittest.TestCase):
             self.assertEqual(store.canonical_text,'嗯啊啊呃')
         finally:store.close()
 
-    def test_hard_cut_ending_is_rejected_but_internal_punctuation_is_allowed(self):
+    def test_hard_cut_alone_does_not_determine_sentence_punctuation(self):
         store=TranscriptStore()
         stable=StabilityBuffer().push(ASREvidence('a',0,1,'如果可行我们就',end_reason='max_duration'))
         store.append(stable)
         context=ContextBuilder().build(store,stable)
         try:
-            for text,should_reject in [('如果可行，我们就',False),('如果可行我们就。',True)]:
+            for text in ['如果可行，我们就','如果可行我们就。']:
                 patch=translate_output(json.dumps(dict(base_revision=1,operations=[dict(op='replace',old_text=context.snapshot.text,new_text=text)])),context.snapshot,'anchored')
-                if should_reject:
-                    with self.assertRaisesRegex(PatchRejected,'HARD_CUT_TERMINATOR'):
-                        validate_segment_boundary(patch,context)
-                else:validate_segment_boundary(patch,context)
+                validate_segment_boundary(patch,context)
         finally:store.close()
 
 

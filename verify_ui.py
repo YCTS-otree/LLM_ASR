@@ -75,6 +75,14 @@ def main():
                 dialog.reject()
     QTimer.singleShot(100,capture_api_dialog)
     window.edit_api_settings()
+    def capture_glossary_dialog():
+        for dialog in application.topLevelWidgets():
+            if isinstance(dialog,QDialog) and dialog.isVisible():
+                dialog.grab().save(str(ROOT/'logs/ui_glossary.png'))
+                dialog.reject()
+    QTimer.singleShot(100,capture_glossary_dialog)
+    with patch('glossary.load_terms',return_value=[dict(term='OPPO Find X10 Pro Max',aliases=['oppe find x十pro max'])]):
+        window.edit_glossary()
     window.close()
     store.close()
     print('Patched transcript UI rendered at 900x700 and 720x600.')

@@ -74,6 +74,8 @@ class ASREvidence:
     fallback_reason: str | None = None
     punctuated_text: str | None = None
     punctuation_error: str | None = None
+    low_energy_spans: tuple[tuple[float, float], ...] = ()
+    pause_threshold: float | None = None
 
     @property
     def global_timestamps(self):

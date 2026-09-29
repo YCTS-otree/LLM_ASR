@@ -26,6 +26,6 @@ class BaselinePunctuation:
         # Transfer punctuation/spacing while preserving raw lexical characters.
         original=iter(old_words)
         output=''.join(next(original) if not c.isspace() and not unicodedata.category(c).startswith('P') else c for c in output)
-        # Technical boundaries are not sentence boundaries. Internal punctuation
-        # remains usable even if the LLM is disabled or fails.
-        return output.rstrip('。？！.!?') if end_reason == 'max_duration' else output
+        # Preserve the punctuation baseline, including its final prediction.
+        # The LLM sees the technical cut reason and may revise this punctuation.
+        return output

@@ -1,0 +1,5 @@
+[
+  {"term":"OPPO Find X10 Pro Max","aliases":["oppe find x十pro max","oppo find x十pro max","oppo find x10 pro max"],"note":"手机型号示例；仅在上下文确实指此型号时使用，不根据品牌猜测未说出的型号。"},
+  {"term":"Paraformer","aliases":["para former"],"note":"语音识别模型名称。"},
+  {"term":"DeepSeek","aliases":["deep seek"],"note":"模型或服务名称。"}
+]

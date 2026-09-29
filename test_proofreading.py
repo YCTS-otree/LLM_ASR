@@ -40,6 +40,8 @@ class ProofreadingTests(unittest.TestCase):
 
     def test_context_can_correct_absent_candidate_and_normalize_numbers(self):
         for old,new in [('我们一九九九年成立','我们1999年成立'),
+                        ('芯片采用二纳米工艺','芯片采用2nm工艺'),
+                        ('配备八千毫安时电池','配备8000mAh电池'),
                         ('这款芯片是天机九千六','这款芯片是天玑9600'),
                         ('今天讨论锐龙九千系处理器','今天讨论锐龙9000系处理器'),
                         ('现在发布贝塔版本','现在发布Beta版本')]:
@@ -85,7 +87,7 @@ class ProofreadingTests(unittest.TestCase):
         store.close()
         model=object.__new__(BaselinePunctuation);model.model=Mock()
         model.model.generate.return_value=[{'text':'你好，世界。'}]
-        self.assertEqual(model.punctuate('你好世界','max_duration'),'你好，世界')
+        self.assertEqual(model.punctuate('你好世界','max_duration'),'你好，世界。')
         model.model.generate.return_value=[{'text':' Oppo手机，很好。'}]
         self.assertEqual(model.punctuate('oppo手机很好','silence'),' oppo手机，很好。')
         model.model.generate.return_value=[{'text':'编造内容。'}]

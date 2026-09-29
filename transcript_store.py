@@ -161,9 +161,9 @@ class TranscriptStore:
         self.db.execute('INSERT INTO revisions VALUES(?,?,?,?,?,?)',
                         (revision, now(), kind, source, revision - 1, json_text(data)))
 
-    def append(self, stable):
+    def append(self, stable, use_baseline=True):
         evidence = stable.evidence
-        initial = evidence.punctuated_text if evidence.punctuated_text is not None else evidence.best_text
+        initial = evidence.punctuated_text if use_baseline and evidence.punctuated_text is not None else evidence.best_text
         with self.lock, self.db:
             old_revision = self.revision
             old_boundary = self.frozen_boundary
@@ -177,7 +177,7 @@ class TranscriptStore:
             boundary = self._advance(revision, old_length + len(initial))
             self._history(revision, 'ASR_APPEND', 'ASR', {
                 'segment_id': evidence.segment_id, 'offset': old_length, 'before': '', 'after': initial,
-                'baseline_punctuation': evidence.punctuated_text is not None,
+                'baseline_punctuation': use_baseline and evidence.punctuated_text is not None,
                 'end_reason': evidence.end_reason, 'hard_cut': stable.hard_cut,
                 'follows_hard_cut': stable.follows_hard_cut, 'previous_segment_id': stable.previous_segment_id,
                 'frozen_before': old_boundary, 'frozen_after': boundary})

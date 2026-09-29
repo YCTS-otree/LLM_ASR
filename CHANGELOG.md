@@ -165,3 +165,25 @@
 
 ### Notes
 -107 tests passed using temporary dummy credentials only. API settings GUI inspected. No real key was read and no live API request was made.
+
+## v1.6.0 - 2026-09-29
+
+### Added
+- Configurable LLM target length, output-token budget and batch timeout; DeepSeek effort low/high/max, request timeout, non-thinking temperature and optional unchanged-answer punctuation retry. Parameters remain staged until Load model.
+- Baseline-only, pause-only and combined punctuation strategies. Immutable low-energy/timestamp evidence carries explicitly approximate raw-word anchors or time-only hints.
+- Editable runtime glossary.json with bounded contextual retrieval, bundled examples and no unconditional replacement. User glossary is excluded from Git.
+- Narrow, audited written-number formatting for clear specifications and years, including2nm,8000mAh and锐龙9000系. Prompt includes unit casing and idiom-preservation rules.
+- Request counts and token/normalization details in result-title tooltips and session metadata.
+
+### Changed
+- DeepSeek defaults to512-character targets instead of128 and skips optional no-change punctuation retries. Local targets remain128 by default. Both allow64–2048 characters with overlapping read context and disjoint write ranges.
+- Focused answers produce minimal validated patches; large input targets no longer fail merely because the unchanged source text exceeds128 characters.
+
+### Fixed
+- Preserve baseline terminal punctuation at technical audio cuts; semantic boundaries are no longer rejected solely because the segment reached its duration limit.
+- Repeated text does not shift an isolated punctuation edit into distant deletion/insertion operations.
+
+### Notes
+-119 tests passed; single/dual/API layouts and settings/glossary dialogs visually checked.
+- Local six-case formatting probe passed6/6 with four rule-assisted cases, versus2/6 prompt-only. This is not a semantic-model accuracy gain.
+-60-second real import: four segments, zero ASR/punctuation failures or drops, source unchanged and UI/SQLite/TXT equal. Sparse pause hints in this compressed sample; no live API latency measurement. See BENCHMARK_v1.6.0.md.

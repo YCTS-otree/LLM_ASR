@@ -17,4 +17,5 @@ env/
 !.env.example
 *.pem
 *.key
+glossary.json
 Release/

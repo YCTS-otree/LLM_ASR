@@ -75,7 +75,7 @@ class QwenLocalBackend:
     def process(self, context):
         if self.enabled and self.ready:
             self.cancel.clear()
-        targets=focused_contexts(context)
+        targets=focused_contexts(context,self.config.target_chars)
         if len(targets)==1 and targets[0] is context:
             return self._process_once(context)
         started=time.perf_counter()
@@ -89,7 +89,7 @@ class QwenLocalBackend:
                 break
             result=self._process_once(target,deadline)
             attempts=[]
-            if target.focused and (result.error in ('INVALID_OUTPUT','VALIDATION_REJECTED') or (result.patch is not None and not result.patch['operations'] and len(target.snapshot.writable_text)>24)):
+            if target.focused and (result.error in ('INVALID_OUTPUT','VALIDATION_REJECTED') or (self.config.retry_unchanged and result.patch is not None and not result.patch['operations'] and len(target.snapshot.writable_text)>24)):
                 # Quality over latency: one conservative punctuation-only retry.
                 # Both attempts use the same immutable snapshot and deadline.
                 attempts.append(dict(result.metadata,result=result.error or 'VALID'))
@@ -103,6 +103,8 @@ class QwenLocalBackend:
                 record['attempts']=attempts
                 record['input_tokens']=sum(a.get('input_tokens',0) for a in attempts)
                 record['output_tokens']=sum(a.get('output_tokens',0) for a in attempts)
+                record['reasoning_tokens']=sum(a.get('reasoning_tokens',0) for a in attempts)
+                record['written_number_normalization']=any(a.get('written_number_normalization',False) for a in attempts)
             if result.patch:
                 # Adjacent targets can propose the same punctuation at their
                 # shared boundary. Keep an identical operation only once;
@@ -123,6 +125,9 @@ class QwenLocalBackend:
             latency=time.perf_counter()-started,subrequests=records,focus_count=len(targets),
             input_tokens=sum(r.get('input_tokens',0) for r in records),output_tokens=sum(r.get('output_tokens',0) for r in records),
             partial_failures=sum(r['result']!='VALID' for r in records))
+        metadata['request_count']=sum(len(r.get('attempts',[r])) for r in records if 'request_id' in r)
+        metadata['reasoning_tokens']=sum(r.get('reasoning_tokens',0) for r in records)
+        metadata['written_number_normalization']=any(r.get('written_number_normalization',False) for r in records)
         metadata.pop('result',None)
         revised=s.text
         for op in sorted(combined['operations'],key=lambda item:(item['start'],item['end']),reverse=True):
@@ -145,6 +150,7 @@ class QwenLocalBackend:
                         protocol=self.config.protocol, dtype=self.config.dtype, base_revision=context.snapshot.revision,
                         window_start=context.snapshot.window_start, window_length=len(context.snapshot.writable_text),
                         segment_ids=[context.evidence.segment_id], nbest_count=len(context.evidence.nbest),
+                        punctuation_strategy=context.punctuation_mode,
                         input_tokens=0, output_tokens=0, prefill_latency=None, decode_latency=None)
         try:
             if not self.enabled or not self.ready:
@@ -203,7 +209,12 @@ class QwenLocalBackend:
                     raise PatchRejected('OUTPUT_TOKEN_LIMIT')
                 # Full prompts/raw output are debug-only, under rotating log limits.
                 log.debug('Qwen request=%s messages=%s raw=%s', metadata['request_id'], messages, raw)
-                patch = translate_focused_output(raw,context.snapshot,None if context.punctuation_only else context.evidence) if context.focused else translate_output(raw, context.snapshot, self.config.protocol)
+                patch = translate_focused_output(raw,context.snapshot,None if context.punctuation_only else context.evidence,normalize_numbers=True) if context.focused else translate_output(raw, context.snapshot, self.config.protocol)
+                if context.focused:
+                    from llm_protocol import strict_json
+                    from number_formatting import normalize_written_numbers
+                    model_text=strict_json(raw)['text']
+                    metadata['written_number_normalization']=model_text!=normalize_written_numbers(model_text)
                 validate_segment_boundary(patch, context)
                 metadata['latency'] = time.perf_counter() - started
                 self.last_metadata = dict(metadata)
