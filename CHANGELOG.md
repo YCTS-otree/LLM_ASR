@@ -187,3 +187,12 @@
 -119 tests passed; single/dual/API layouts and settings/glossary dialogs visually checked.
 - Local six-case formatting probe passed6/6 with four rule-assisted cases, versus2/6 prompt-only. This is not a semantic-model accuracy gain.
 -60-second real import: four segments, zero ASR/punctuation failures or drops, source unchanged and UI/SQLite/TXT equal. Sparse pause hints in this compressed sample; no live API latency measurement. See BENCHMARK_v1.6.0.md.
+
+## v1.6.1 - 2026-09-29
+
+### Fixed
+- Operational logs now appear in both the console and rotating pipeline.log, without duplicate handlers. Debug transcript output remains file-only when explicitly enabled.
+- DeepSeek requests log start, completion latency, token usage and sanitized failures; HTTP402 now explains insufficient API balance in the UI and logs. Other common HTTP failures have actionable explanations without response bodies or credentials.
+
+### Notes
+-121 automated tests passed, including console/file output and redacted402 handling. GUI layouts checked; no live API call or balance query was made.

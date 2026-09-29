@@ -137,6 +137,17 @@ class DeepSeekTests(unittest.TestCase):
             with self.assertRaises(ValueError):DeepSeekBackend(DeepSeekConfig(api_key_file=str(Path(folder)/'missing.key'))).load()
             network.assert_not_called()
 
+    def test_402_explanation_is_logged_without_response_or_credentials(self):
+        backend,c=self.setup_backend();opener=Mock()
+        opener.open.side_effect=urllib.error.HTTPError('https://api.deepseek.com',402,'unit-test-placeholder',{},None)
+        with patch('deepseek_backend.urllib.request.build_opener',return_value=opener),self.assertLogs('meeting_asr',level='INFO') as captured:
+            result=backend.process(c)
+        self.assertEqual(opener.open.call_count,1)
+        self.assertEqual(result.metadata['detail'],'HTTP_402')
+        self.assertIn('余额不足',result.metadata['error_hint'])
+        self.assertIn('余额不足',' '.join(captured.output))
+        self.assertNotIn('unit-test-placeholder',' '.join(captured.output))
+
     def test_key_file_bom_whitespace_reload_and_close(self):
         with tempfile.TemporaryDirectory() as folder:
             path=Path(folder)/'DEEPSEEK.key'

@@ -130,6 +130,8 @@ class CorrectionWorker(threading.Thread):
                 if isinstance(result, BackendResult):
                     metadata = dict(result.metadata)
                     if result.error:
+                        log.warning('LLM 校对失败 revision=%s result=%s detail=%s',
+                                    context.snapshot.revision,result.error,metadata.get('detail',''))
                         self.event('LLM_REQUEST', dict(metadata, result=result.error))
                         continue
                     result = result.patch
@@ -140,6 +142,9 @@ class CorrectionWorker(threading.Thread):
                 revision = self.revisions.apply(result, context.snapshot,
                     source=getattr(self.backend, 'source', 'MOCK_LLM'), metadata=metadata or None)
                 if metadata:
+                    log.info('LLM 校对结束 revision=%s result=%s latency=%.2fs requests=%s',
+                             previous,'APPLIED' if revision != previous else 'NO_CHANGE',
+                             metadata.get('latency',0),metadata.get('request_count',1))
                     self.event('LLM_REQUEST', dict(metadata, result='APPLIED' if revision != previous else 'NO_CHANGE',
                                                    applied_revision=revision))
             except PatchRejected as exc:

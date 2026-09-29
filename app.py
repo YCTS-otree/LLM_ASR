@@ -622,6 +622,8 @@ class Window(QMainWindow):
                     outcome += f' · {latest["partial_failures"]}处未通过'
                 if latest and latest.get('detail'):
                     outcome += ' · '+str(latest['detail'])[:80]
+                    if latest.get('error_hint'):
+                        outcome += ' · '+latest['error_hint']
                 title.setWordWrap(True)
                 title.setText(getattr(member,'model_id',f'Qwen3.5-{member.config.model_size.upper()}') +
                               (f' · {latency:.2f}s · {outcome}' if latency is not None else ''))

@@ -2,7 +2,7 @@
 
 本地会议转录工具：**FunASR Paraformer-large + Qwen3.5 上下文纠错与标点恢复**。支持麦克风持续录音、录音文件离线转录、2B / 0.8B 双模型对比，以及可追溯的原始识别和修改历史。
 
-**版本：1.6.0 · 源代码许可：[GPL-3.0-only](LICENSE)**
+**版本：1.6.1 · 源代码许可：[GPL-3.0-only](LICENSE)**
 
 这是实验性桌面应用。优先忠实保留讲话内容；模型仍可能漏标点、误断句或误改词，需要人工校对。当前使用离线 Paraformer 按声音停顿分段，不是 FunASR streaming 模型，没有说话人分离，也不保证实时响应。
 
@@ -102,6 +102,8 @@ $pythonExe = ".\.venv\Scripts\python.exe"
 Qwen 下载脚本校验固定 SHA256，模型标识和对应官方 revision 在 [qwen_spec.py](qwen_spec.py)。国内仓库文件若更新导致校验失败，请勿跳过校验，可改用 `--source huggingface` 下载固定 revision。程序启动不会自动下载权重。
 
 ## 使用方法
+
+使用`start.bat`或终端运行`python app.py`时，控制台与`logs/pipeline.log`同时显示运行日志。DeepSeek请求会报告开始、耗时、token用量和错误原因，不输出密钥或响应正文。HTTP402表示API账户余额不足，需到DeepSeek开放平台检查余额；401表示密钥认证失败。通过pythonw等无控制台方式启动时仍保留文件日志。
 
 1. 先选择输入设备、模型、精度与修改窗口，再点击 **Load model**。等待加载完成后开始；改变模型或精度后需要再次点击按钮应用。仅修改阈值、目录或窗口大小不需重载权重。
 2. 点击「开始录音」，或点击「导入录音」选择已有文件。

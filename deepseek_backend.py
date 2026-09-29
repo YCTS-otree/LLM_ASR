@@ -3,6 +3,7 @@ from dataclasses import dataclass, field
 import json
 import time
 import uuid
+import logging
 import urllib.request
 import urllib.error
 from pathlib import Path
@@ -11,6 +12,17 @@ from qwen_backend import QwenLocalBackend
 from llm_protocol import (BackendResult, PROMPT_VERSION, build_messages,
                           translate_focused_output, validate_segment_boundary)
 from patches import PatchRejected
+
+log = logging.getLogger('meeting_asr')
+HTTP_HINTS = {
+    400: '请求格式错误，请检查模型和请求配置',
+    401: 'API密钥认证失败，请检查配置后重新Load model',
+    402: 'API账户余额不足，请在DeepSeek开放平台检查余额并充值后重试',
+    422: '请求参数无效，请检查模型支持的参数',
+    429: '请求速率达到上限，请稍后重试',
+    500: 'DeepSeek服务器故障，请稍后重试',
+    503: 'DeepSeek服务器繁忙，请稍后重试',
+}
 
 
 @dataclass(frozen=True)
@@ -102,6 +114,9 @@ class DeepSeekBackend(QwenLocalBackend):
                 data=json.dumps(payload,ensure_ascii=False).encode('utf-8'),
                 headers={'Authorization':'Bearer '+self._api_key,'Content-Type':'application/json'},method='POST')
             self.status('DeepSeek 校对中 · 正在发送转录文字')
+            log.info('DeepSeek 请求开始 id=%s target_chars=%s effort=%s max_tokens=%s timeout=%.1fs',
+                     metadata['request_id'],len(context.snapshot.writable_text),metadata['reasoning_effort'],
+                     self.config.output_token_limit,timeout)
             chunks=[]
             received=0
             request_deadline=start+timeout
@@ -132,11 +147,18 @@ class DeepSeekBackend(QwenLocalBackend):
             usage=data.get('usage',{})
             metadata.update(input_tokens=usage.get('prompt_tokens',0),output_tokens=usage.get('completion_tokens',0))
             metadata['reasoning_tokens']=usage.get('completion_tokens_details',{}).get('reasoning_tokens',0)
+            log.info('DeepSeek 请求完成 id=%s latency=%.2fs input_tokens=%s output_tokens=%s reasoning_tokens=%s',
+                     metadata['request_id'],time.perf_counter()-start,metadata['input_tokens'],
+                     metadata['output_tokens'],metadata['reasoning_tokens'])
             return BackendResult(patch,dict(metadata,latency=time.perf_counter()-start))
         except Exception as exc:
             # Never include str(exc), HTTP bodies, request headers or API keys.
             detail=(exc.code if isinstance(exc,PatchRejected) else
                     'HTTP_'+str(exc.code) if isinstance(exc,urllib.error.HTTPError) else type(exc).__name__)
+            hint=HTTP_HINTS.get(exc.code,'HTTP请求失败') if isinstance(exc,urllib.error.HTTPError) else '校对请求未完成，保留原文'
+            metadata['error_hint']=hint
+            log.warning('DeepSeek 请求失败 id=%s code=%s latency=%.2fs %s',
+                        metadata['request_id'],detail,time.perf_counter()-start,hint)
             return BackendResult(None,dict(metadata,detail=detail,latency=time.perf_counter()-start),'API_ERROR')
         finally:
             self.status('已配置' if self.enabled else 'Disabled')

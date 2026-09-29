@@ -68,6 +68,14 @@ def main():
     window.resize(720,600)
     application.processEvents()
     window.grab().save(str(ROOT/'logs/ui_deepseek_720.png'))
+    store.record_event('LLM_REQUEST',dict(result='API_ERROR',latency=.2,detail='HTTP_402',
+        error_hint='API账户余额不足，请在DeepSeek开放平台检查余额并充值后重试'))
+    window.session=Mock(store=store,comparison_store=None)
+    window.refresh_transcript()
+    application.processEvents()
+    assert window.output.height()>40
+    window.grab().save(str(ROOT/'logs/ui_deepseek_error_720.png'))
+    window.session=None
     def capture_api_dialog():
         for dialog in application.topLevelWidgets():
             if isinstance(dialog,QDialog) and dialog.isVisible():

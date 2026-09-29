@@ -1,4 +1,4 @@
-# Contextual transcript infrastructure — v1.6.0
+# Contextual transcript infrastructure — v1.6.1
 
 ## Current behavior (supersedes historical version notes below)
 
